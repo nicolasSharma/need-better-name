@@ -64,6 +64,8 @@ const theme = extendTheme({
 				transition: 'background 0.2s ease, color 0.2s ease',
 				paddingTop: 'env(safe-area-inset-top, 0px)',
 				paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+				overscrollBehavior: 'none',
+				overflowX: 'hidden',
 			},
 		},
 	},

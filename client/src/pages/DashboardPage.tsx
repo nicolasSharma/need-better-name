@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Box, Flex, Heading, Text, VStack, HStack, Avatar, Icon, Button, useDisclosure, Drawer, DrawerOverlay, DrawerContent, DrawerHeader, DrawerBody, Modal, ModalOverlay, ModalContent, ModalHeader, ModalBody, ModalCloseButton, Switch, Divider, Badge, useColorMode, RadioGroup, Radio, Stack, IconButton } from '@chakra-ui/react';
 import { useNavigate } from 'react-router-dom';
 import { IoCheckmarkCircleOutline, IoWarningOutline, IoNotificationsOutline, IoSettingsOutline, IoClose, IoMoonOutline, IoSunnyOutline, IoLaptopOutline, IoAddCircleOutline, IoLogOutOutline, IoWalletOutline, IoStatsChartOutline, IoArrowBack } from 'react-icons/io5';
@@ -104,6 +105,17 @@ const DashboardPage = () => {
 						icon: IoWalletOutline
 					},
 					{
+						title: "Final Step: Native App",
+						body: "To get full notifications and the best experience, you MUST add this to your home screen. It will feel like a real app!",
+						icon: IoLaptopOutline
+					},
+					{
+						title: "How to Install",
+						body: "Tap the 'Share' icon in your browser (bottom center) and select 'Add to Home Screen'.",
+						icon: IoAddCircleOutline,
+						specialType: 'ios_share'
+					},
+					{
 						title: "Live Market Ticker",
 						body: "Watch the top of your screen for a real-time feed of every trade, payout, and reward across the entire house.",
 						icon: IoStatsChartOutline
@@ -134,17 +146,6 @@ const DashboardPage = () => {
 						title: "Global Command",
 						body: "Tap the floating (+) button in the bottom right to quickly add expenses, chores, or create new casino markets from anywhere.",
 						icon: IoAddCircleOutline
-					},
-					{
-						title: "Final Step: Native App",
-						body: "To get full notifications and the best experience, you MUST add this to your home screen. It will feel like a real app!",
-						icon: IoLaptopOutline
-					},
-					{
-						title: "How to Install",
-						body: "Tap the 'Share' icon in your browser (bottom center) and select 'Add to Home Screen'.",
-						icon: IoAddCircleOutline,
-						specialType: 'ios_share'
 					}
 				]} 
 			/>
@@ -169,6 +170,35 @@ const DashboardPage = () => {
 					<Icon as={IoSettingsOutline} boxSize={6} color='textPrimary' cursor='pointer' onClick={openSettings} />
 				</HStack>
 			</Flex>
+
+			{/* Notification Bugging Banner */}
+			{('Notification' in window) && Notification.permission !== 'granted' && (
+				<Box 
+					bg='primaryAction' 
+					color='white' 
+					p={4} 
+					borderRadius='16px' 
+					mb={8} 
+					shadow='lg'
+					onClick={requestWebPush}
+					cursor='pointer'
+					as={motion.div}
+					initial={{ scale: 0.95, opacity: 0 }}
+					animate={{ scale: 1, opacity: 1 }}
+					whileTap={{ scale: 0.98 }}
+				>
+					<HStack justify='space-between'>
+						<HStack spacing={3}>
+							<Icon as={IoNotificationsOutline} boxSize={5} />
+							<Box>
+								<Text fontWeight='800' fontSize='sm'>Enable House Notifications</Text>
+								<Text fontSize='xs' opacity={0.9}>Tap here to stay synced with the network.</Text>
+							</Box>
+						</HStack>
+						<Icon as={IoArrowBack} transform='rotate(180deg)' />
+					</HStack>
+				</Box>
+			)}
 
 			{/* Main Widgets (Liquidity, Action Items, Contracts) */}
 			<Box bg='surface' p={6} borderRadius='16px' border='1px solid' borderColor='border' mb={8}>

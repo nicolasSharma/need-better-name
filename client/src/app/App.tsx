@@ -17,17 +17,48 @@ import ProtectedRoute from '@/components/ProtectedRoute';
 import BottomNav from '@/components/BottomNav';
 import TopNav from '@/components/TopNav';
 import { GlobalActionMenu } from '@/components/GlobalActionMenu';
+import { useEffect } from 'react';
+import { useToast } from '@chakra-ui/react';
 
-const AppLayout = () => (
-	<Box bg='bg' minH='100vh' maxW='600px' mx='auto' position='relative' borderLeft='1px solid' borderRight='1px solid' borderColor='border' pb='env(safe-area-inset-bottom, 0px)'>
-		<TopNav />
-		<Box pt='calc(48px + env(safe-area-inset-top, 0px))' pb='100px' minH='100vh'>
-			<Outlet />
+const AppLayout = () => {
+	const toast = useToast();
+
+	useEffect(() => {
+		const checkVersion = async () => {
+			try {
+				const res = await fetch('/version.json?t=' + Date.now());
+				const data = await res.json();
+				const localVersion = localStorage.getItem('appVersion');
+				
+				if (localVersion && localVersion !== data.version) {
+					toast({
+						title: 'New Update Available',
+						description: 'A new version of The Hub is ready. Refresh to see the latest features.',
+						status: 'info',
+						duration: null,
+						isClosable: true,
+						position: 'top',
+					});
+				}
+				localStorage.setItem('appVersion', data.version);
+			} catch (e) {
+				console.log('Version check failed', e);
+			}
+		};
+		checkVersion();
+	}, [toast]);
+
+	return (
+		<Box bg='bg' minH='100vh' maxW='600px' mx='auto' position='relative' borderLeft='1px solid' borderRight='1px solid' borderColor='border' pb='env(safe-area-inset-bottom, 0px)'>
+			<TopNav />
+			<Box pt='calc(48px + env(safe-area-inset-top, 0px))' pb='100px' minH='100vh'>
+				<Outlet />
+			</Box>
+			<GlobalActionMenu />
+			<BottomNav />
 		</Box>
-		<GlobalActionMenu />
-		<BottomNav />
-	</Box>
-);
+	);
+};
 
 const App = () => (
 	<ChakraProvider theme={theme}>
