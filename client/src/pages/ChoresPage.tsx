@@ -13,8 +13,8 @@ import { createChore } from '@/lib/firestore';
 import ChoreCard from '@/components/ChoreCard';
 import { triggerHaptic } from '@/lib/haptics';
 import TutorialWizard from '@/components/TutorialWizard';
-import { IoCheckmarkCircleOutline, IoRocketOutline, IoShieldHalf } from 'react-icons/io5';
 import { filterHouseMembers } from '@/lib/admin';
+import { IoCheckmarkCircleOutline, IoRocketOutline, IoShieldHalf } from 'react-icons/io5';
 
 
 interface Roommate extends UserProfile { id: string; }

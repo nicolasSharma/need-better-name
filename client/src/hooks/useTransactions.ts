@@ -51,7 +51,7 @@ export function useTransactions(isGlobal = false) {
 		);
 
 		return unsubscribe;
-	}, [user]);
+	}, [user, isGlobal]);
 
 	return { transactions, loading };
 }

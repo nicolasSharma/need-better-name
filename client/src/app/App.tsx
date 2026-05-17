@@ -1,4 +1,5 @@
-import { ChakraProvider, Box } from '@chakra-ui/react';
+import React, { useEffect } from 'react';
+import { ChakraProvider, Box, Heading, Text, Button, useToast } from '@chakra-ui/react';
 import { BrowserRouter, Routes, Route, Outlet } from 'react-router-dom';
 import { AuthProvider } from '@/hooks/useAuth';
 import theme from '@/config/theme';
@@ -13,14 +14,34 @@ import PerksPage from '@/pages/PerksPage';
 import LedgerPage from '@/pages/LedgerPage';
 import AdminPage from '@/pages/AdminPage';
 import SplitwisePage from '@/pages/SplitwisePage';
+import GamesPage from '@/pages/GamesPage';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import BottomNav from '@/components/BottomNav';
 import TopNav from '@/components/TopNav';
 import { GlobalActionMenu } from '@/components/GlobalActionMenu';
-import { useEffect } from 'react';
-import { useToast } from '@chakra-ui/react';
+
+class ErrorBoundary extends React.Component<{children: React.ReactNode}, {hasError: boolean, error: any}> {
+	constructor(props: any) { super(props); this.state = { hasError: false, error: null }; }
+	static getDerivedStateFromError(error: any) { return { hasError: true, error }; }
+	componentDidCatch(error: any, info: any) { console.error("Boundary Caught:", error, info); }
+	render() {
+		if (this.state.hasError) {
+			return (
+				<Box p={10} bg='red.900' color='white' minH='100vh'>
+					<Heading size='lg' mb={4}>Something went wrong.</Heading>
+					<Text fontFamily='mono' fontSize='sm' bg='rgba(0,0,0,0.3)' p={4} borderRadius='8px'>
+						{this.state.error?.toString()}
+					</Text>
+					<Button mt={6} colorScheme='whiteAlpha' onClick={() => window.location.reload()}>Reload Page</Button>
+				</Box>
+			);
+		}
+		return this.props.children;
+	}
+}
 
 const AppLayout = () => {
+	console.log("AppLayout Mounting...");
 	const toast = useToast();
 
 	useEffect(() => {
@@ -52,7 +73,9 @@ const AppLayout = () => {
 		<Box bg='bg' minH='100vh' maxW='600px' mx='auto' position='relative' borderLeft='1px solid' borderRight='1px solid' borderColor='border' pb='env(safe-area-inset-bottom, 0px)'>
 			<TopNav />
 			<Box pt='calc(48px + env(safe-area-inset-top, 0px))' pb='100px' minH='100vh'>
-				<Outlet />
+				<ErrorBoundary>
+					<Outlet />
+				</ErrorBoundary>
 			</Box>
 			<GlobalActionMenu />
 			<BottomNav />
@@ -62,24 +85,27 @@ const AppLayout = () => {
 
 const App = () => (
 	<ChakraProvider theme={theme}>
-		<AuthProvider>
-			<BrowserRouter>
-				<Routes>
-					<Route path='/login' element={<LoginPage />} />
-					<Route path='/signup' element={<SignupPage />} />
-					<Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
-						<Route path='/' element={<DashboardPage />} />
-						<Route path='/ledger' element={<LedgerPage />} />
-						<Route path='/splitwise' element={<SplitwisePage />} />
-						<Route path='/chores' element={<ChoresPage />} />
-						<Route path='/casino' element={<CasinoPage />} />
-						<Route path='/casino/:id' element={<MarketPage />} />
-						<Route path='/perks' element={<PerksPage />} />
-						<Route path='/admin' element={<AdminPage />} />
-					</Route>
-				</Routes>
-			</BrowserRouter>
-		</AuthProvider>
+		<ErrorBoundary>
+			<AuthProvider>
+				<BrowserRouter>
+					<Routes>
+						<Route path='/login' element={<LoginPage />} />
+						<Route path='/signup' element={<SignupPage />} />
+						<Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
+							<Route path='/' element={<DashboardPage />} />
+							<Route path='/leaderboard' element={<ErrorBoundary><LedgerPage /></ErrorBoundary>} />
+							<Route path='/splitwise' element={<SplitwisePage />} />
+							<Route path='/chores' element={<ChoresPage />} />
+							<Route path='/casino' element={<ErrorBoundary><CasinoPage /></ErrorBoundary>} />
+							<Route path='/casino/games' element={<GamesPage />} />
+							<Route path='/casino/:id' element={<MarketPage />} />
+							<Route path='/perks' element={<PerksPage />} />
+							<Route path='/admin' element={<AdminPage />} />
+						</Route>
+					</Routes>
+				</BrowserRouter>
+			</AuthProvider>
+		</ErrorBoundary>
 	</ChakraProvider>
 );
 

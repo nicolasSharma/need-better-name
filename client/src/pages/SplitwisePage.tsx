@@ -11,6 +11,7 @@ import { triggerHaptic } from '@/lib/haptics';
 import { useUser } from '@/hooks/useUser';
 import TutorialWizard from '@/components/TutorialWizard';
 import { IoCardOutline, IoWalletOutline, IoAddCircleOutline } from 'react-icons/io5';
+import { filterHouseMembers } from '@/lib/admin';
 
 interface Roommate extends UserProfile {
 	id: string;
@@ -27,7 +28,7 @@ const SplitwisePage = () => {
 	useEffect(() => {
 		const fetchUsers = async () => {
 			const snap = await getDocs(query(collection(db, 'users'), orderBy('displayName')));
-			setRoommates(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+			setRoommates(filterHouseMembers(snap.docs.map(d => ({ id: d.id, ...d.data() } as any))));
 		};
 		fetchUsers();
 	}, []);

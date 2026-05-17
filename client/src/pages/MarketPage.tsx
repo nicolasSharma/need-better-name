@@ -11,6 +11,7 @@ import { collection, query, orderBy, getDocs } from 'firebase/firestore';
 import { db } from '@/config/firebase';
 import BetSlip from '@/components/BetSlip';
 import { IoArrowBack, IoTrendingUpOutline } from 'react-icons/io5';
+import { filterHouseMembers, isSystemAdmin } from '@/lib/admin';
 
 const statusColors: Record<string, string> = { open: 'green', locked: 'yellow', resolved: 'gray', pending_resolution: 'orange' };
 const palette = ['#30D158', '#0A84FF', '#BF5AF2', '#FF9F0A', '#FF453A', '#64D2FF'];
@@ -67,11 +68,14 @@ const ProbabilityGraph = ({ market, bets }: { market: any, bets: any[] }) => {
 	const width = 1000;
 	const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
 
-	const handleMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
+	const handleMouseMove = (e: React.MouseEvent<SVGSVGElement> | React.TouchEvent<SVGSVGElement>) => {
 		if (!svgRef.current) return;
 		const rect = svgRef.current.getBoundingClientRect();
-		const ratio = (e.clientX - rect.left) / rect.width;
-		setMousePos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+		const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+		const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+		
+		const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+		setMousePos({ x: clientX - rect.left, y: clientY - rect.top });
 		
 		const targetTz = minTz + (ratio * (maxTz - minTz));
 		
@@ -144,9 +148,11 @@ const ProbabilityGraph = ({ market, bets }: { market: any, bets: any[] }) => {
 			<svg 
 				ref={svgRef}
 				viewBox={`0 0 ${width} ${height}`} 
-				style={{ width: '100%', height: '100%', cursor: 'crosshair', overflow: 'visible' }}
+				style={{ width: '100%', height: '100%', cursor: 'crosshair', overflow: 'visible', touchAction: 'none' }}
 				onMouseMove={handleMouseMove}
+				onTouchMove={handleMouseMove}
 				onMouseLeave={() => setHoverIndex(null)}
+				onTouchEnd={() => setHoverIndex(null)}
 				preserveAspectRatio="none"
 			>
 				{[0.25, 0.5, 0.75].map(tick => (
@@ -158,15 +164,28 @@ const ProbabilityGraph = ({ market, bets }: { market: any, bets: any[] }) => {
 				))}
 
 				{hoverIndex !== null && (
-					<line 
-						x1={((dataPoints[hoverIndex].tz - minTz) / (maxTz - minTz)) * width} 
-						y1="0" 
-						x2={((dataPoints[hoverIndex].tz - minTz) / (maxTz - minTz)) * width} 
-						y2={height} 
-						stroke="rgba(128,128,128,0.5)" 
-						strokeWidth="1.5" 
-						strokeDasharray="4 4"
-					/>
+					<>
+						<line 
+							x1={((dataPoints[hoverIndex].tz - minTz) / (maxTz - minTz)) * width} 
+							y1="0" 
+							x2={((dataPoints[hoverIndex].tz - minTz) / (maxTz - minTz)) * width} 
+							y2={height} 
+							stroke="rgba(128,128,128,0.5)" 
+							strokeWidth="1.5" 
+							strokeDasharray="4 4"
+						/>
+						{options.map((opt, i) => (
+							<circle 
+								key={opt}
+								cx={((dataPoints[hoverIndex].tz - minTz) / (maxTz - minTz)) * width}
+								cy={height - (dataPoints[hoverIndex].probs[opt] * height)}
+								r="5"
+								fill={palette[i % palette.length]}
+								stroke="white"
+								strokeWidth="2"
+							/>
+						))}
+					</>
 				)}
 			</svg>
 		</Box>
@@ -187,7 +206,7 @@ const MarketPage = () => {
 	useEffect(() => {
 		const fetchUsers = async () => {
 			const snap = await getDocs(query(collection(db, 'users'), orderBy('displayName')));
-			setRoommates(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+			setRoommates(filterHouseMembers(snap.docs.map(d => ({ id: d.id, ...d.data() } as any))));
 		};
 		fetchUsers();
 	}, []);
@@ -211,15 +230,15 @@ const MarketPage = () => {
 		// 1. Get all bettors (userIds from bets)
 		const bettorIds = Array.from(new Set(bets.map(b => b.userId)));
 		
-		// 2. Impartial = not in bettorIds, and not user.uid
-		const impartial = roommates.filter(r => !bettorIds.includes(r.id) && r.id !== user?.uid);
+		// 2. Impartial = not in bettorIds, not user.uid, and NOT the system admin
+		const impartial = roommates.filter(r => !bettorIds.includes(r.id) && r.id !== user?.uid && !isSystemAdmin(r.displayName));
 		let reviewerId = user?.uid; // Fallback
 		
 		if (impartial.length > 0) {
 			reviewerId = impartial[Math.floor(Math.random() * impartial.length)].id;
 		} else {
-			// If all are in the market, pick a random one excluding user
-			const others = roommates.filter(r => r.id !== user?.uid);
+			// If all are in the market, pick a random one excluding user and admin
+			const others = roommates.filter(r => r.id !== user?.uid && !isSystemAdmin(r.displayName));
 			if (others.length > 0) reviewerId = others[Math.floor(Math.random() * others.length)].id;
 		}
 

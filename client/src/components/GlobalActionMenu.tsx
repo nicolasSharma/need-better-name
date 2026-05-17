@@ -10,7 +10,8 @@ import { IoAdd, IoWalletOutline, IoStatsChartOutline, IoCheckmarkCircleOutline, 
 import { collection, query, getDocs, orderBy, limit } from 'firebase/firestore';
 import { db } from '@/config/firebase';
 import { useAuth } from '@/hooks/useAuth';
-import { filterHouseMembers } from '@/lib/admin';
+import { useUser } from '@/hooks/useUser';
+import { filterHouseMembers, isSystemAdmin } from '@/lib/admin';
 import { createExpense, createMarket, createChore } from '@/lib/firestore';
 import { triggerHaptic } from '@/lib/haptics';
 import { playChime } from '@/lib/audio';
@@ -21,6 +22,7 @@ export const GlobalActionMenu = () => {
 	const { isOpen, onOpen, onClose } = useDisclosure();
 	const [activeForm, setActiveForm] = useState<'menu' | 'expense' | 'market' | 'task'>('menu');
 	const { user } = useAuth();
+	const { profile } = useUser();
 	const toast = useToast();
 	const location = useLocation();
 
@@ -52,6 +54,7 @@ export const GlobalActionMenu = () => {
 	const isDashboard = location.pathname === '/';
 	
 	if (!allowedPaths.includes(location.pathname)) return null;
+	if (isSystemAdmin(profile?.displayName)) return null;
 
 	return (
 		<>

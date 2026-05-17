@@ -1,11 +1,12 @@
 import { Box, Flex, Icon, Text } from '@chakra-ui/react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { IoHome, IoList, IoDice, IoGift, IoSettings, IoWallet } from 'react-icons/io5';
+import { IoHome, IoList, IoDice, IoGift, IoSettings, IoWallet, IoTrophyOutline } from 'react-icons/io5';
 import { useUser } from '@/hooks/useUser';
+import { isSystemAdmin } from '@/lib/admin';
 
 const navItems = [
 	{ label: 'Home', icon: IoHome, path: '/' },
-	{ label: 'Treasury', icon: IoList, path: '/ledger' },
+	{ label: 'Leaderboard', icon: IoTrophyOutline, path: '/leaderboard' },
 	{ label: 'Wallet', icon: IoWallet, path: '/splitwise' },
 	{ label: 'Casino', icon: IoDice, path: '/casino' },
 	{ label: 'Chores', icon: IoGift, path: '/chores' },
@@ -16,8 +17,11 @@ const BottomNav = () => {
 	const location = useLocation();
 	const { profile } = useUser();
 
-	const activeNavs = [...navItems];
-	if (profile?.isAdmin) {
+	const activeNavs = isSystemAdmin(profile?.displayName) 
+		? [{ label: 'Admin', icon: IoSettings, path: '/admin' }]
+		: [...navItems];
+	
+	if (profile?.isAdmin && !isSystemAdmin(profile?.displayName)) {
 		activeNavs.push({ label: 'Admin', icon: IoSettings, path: '/admin' });
 	}
 

@@ -3,6 +3,7 @@ import { Box, Flex, Text, keyframes } from '@chakra-ui/react';
 import { useUser } from '@/hooks/useUser';
 import { useTransactions } from '@/hooks/useTransactions';
 import AnimatedNumber from '@/components/AnimatedNumber';
+import { isSystemAdmin } from '@/lib/admin';
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from '@/config/firebase';
 
@@ -23,9 +24,9 @@ const TopNav = () => {
 				const map: Record<string, string> = {};
 				snap.docs.forEach(d => { 
 					const data = d.data();
-					if (data.displayName) {
+					if (data.displayName && !isSystemAdmin(data.displayName)) {
 						map[d.id] = data.displayName.split(' ')[0]; 
-					} else {
+					} else if (!data.displayName) {
 						map[d.id] = 'User';
 					}
 				});
@@ -38,10 +39,13 @@ const TopNav = () => {
 		fetchUsers();
 	}, []);
 
-	const marqueeText = transactions.length > 0 
-		? transactions.slice(0, 15).map(tx => {
+	const marqueeText = (transactions || []).length > 0 
+		? (transactions || []).slice(0, 15).map(tx => {
+			if (!tx) return '';
 			const name = roommates[tx.userId] || 'UNKNOWN';
-			const amt = Math.abs(tx.amount);
+			const amt = Math.abs(tx.amount || 0);
+			if (tx.description) return `[ACT] ${name}: ${tx.description}`;
+
 			switch(tx.type) {
 				case 'bet_placed': return `[TRADE] ${name} acquired contract shares (${amt} BT)`;
 				case 'bet_payout': return `[PAYOUT] ${name} yielded +${amt} BT from contract`;
@@ -53,7 +57,7 @@ const TopNav = () => {
 				case 'perk_purchase': return `[BURN] ${name} destroyed ${amt} BT for a perk`;
 				default: return `[TX] ${name} transferred ${amt} BT`;
 			}
-		}).join('  ✦  ')
+		}).filter(Boolean).join('  ✦  ')
 		: 'MARKET OPEN... AWAITING NETWORK ACTIVITY...';
 
 	return (

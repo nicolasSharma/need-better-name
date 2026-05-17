@@ -7,6 +7,7 @@ import { useUser, UserProfile } from '@/hooks/useUser';
 import { adjustUserBalance, grantAdmin } from '@/lib/firestore';
 import { useHouseFund } from '@/hooks/useHouseFund';
 import AnimatedNumber from '@/components/AnimatedNumber';
+import { filterHouseMembers } from '@/lib/admin';
 
 import { IoArrowBack } from 'react-icons/io5';
 import { useNavigate } from 'react-router-dom';
@@ -27,7 +28,10 @@ const AdminPage = () => {
 
 	useEffect(() => {
 		const q = query(collection(db, 'users'), orderBy('createdAt', 'desc'));
-		return onSnapshot(q, (snap) => setUsers(snap.docs.map(d => ({ id: d.id, ...d.data() } as AdminUserProfile))));
+		return onSnapshot(q, (snap) => {
+			const allUsers = snap.docs.map(d => ({ id: d.id, ...d.data() } as AdminUserProfile));
+			setUsers(filterHouseMembers(allUsers));
+		});
 	}, []);
 
 	if (profile && !profile.isAdmin) {

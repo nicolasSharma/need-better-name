@@ -6,6 +6,7 @@ import { Chore } from '@/hooks/useChores';
 import { UserProfile } from '@/hooks/useUser';
 import { claimChore, submitChoreForReview, bountifyChore } from '@/lib/firestore';
 import { useAuth } from '@/hooks/useAuth';
+import { isSystemAdmin } from '@/lib/admin';
 import { triggerHaptic } from '@/lib/haptics';
 import { playThump, playChime } from '@/lib/audio';
 import Confetti from '@/components/Confetti';
@@ -81,7 +82,7 @@ const ChoreCard = ({ chore, roommates }: { chore: Chore, roommates: Roommate[] }
 	const handleComplete = async () => {
 		setLoading(true);
 		
-		const otherRoommates = roommates.filter(r => r.id !== user?.uid);
+		const otherRoommates = roommates.filter(r => r.id !== user?.uid && !isSystemAdmin(r.displayName));
 		let reviewerId = user?.uid;
 		if (otherRoommates.length > 0) {
 			reviewerId = otherRoommates[Math.floor(Math.random() * otherRoommates.length)].id;

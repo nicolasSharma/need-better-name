@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
 import {
-	Box, Flex, Text, VStack, Button, Input, NumberInput, NumberInputField, HStack,
+	Box, Flex, Text, VStack, Button, Input, NumberInput, NumberInputField, 
 	Modal, ModalOverlay, ModalContent, ModalHeader, ModalBody, ModalCloseButton,
-	useDisclosure, useToast, Select, Avatar, IconButton, Divider
+	useDisclosure, useToast, Select, Avatar, IconButton, Divider, HStack, Icon
 } from '@chakra-ui/react';
+import { useNavigate } from 'react-router-dom';
 import { collection, query, getDocs, orderBy } from 'firebase/firestore';
 import { db } from '@/config/firebase';
 import { useMarkets } from '@/hooks/useMarkets';
@@ -14,14 +15,13 @@ import MarketCard from '@/components/MarketCard';
 import Skeleton from '@/components/Skeleton';
 import { triggerHaptic } from '@/lib/haptics';
 import TutorialWizard from '@/components/TutorialWizard';
-import { IoStatsChartOutline, IoSearchOutline, IoCheckmarkCircleOutline } from 'react-icons/io5';
-
-import { IoAdd, IoTrashOutline } from 'react-icons/io5';
+import { IoAdd, IoTrashOutline, IoGameControllerOutline, IoSearchOutline, IoCheckmarkCircleOutline, IoStatsChartOutline } from 'react-icons/io5';
 import { filterHouseMembers } from '@/lib/admin';
 
 interface Roommate extends UserProfile { id: string; }
 
 const CasinoPage = () => {
+	const navigate = useNavigate();
 	const { markets, loading: marketsLoading } = useMarkets();
 	const { user } = useAuth();
 	const { profile, loading: profileLoading } = useUser();
@@ -91,8 +91,8 @@ const CasinoPage = () => {
 	};
 
 	const isLoading = profileLoading || marketsLoading;
-	const activeMarkets = markets.filter(m => {
-		if (m.status !== 'open') return false;
+	const activeMarkets = (markets || []).filter(m => {
+		if (!m || m.status !== 'open') return false;
 		if (filter === 'all') return true;
 		return m.taggedUserId === filter;
 	});
@@ -131,6 +131,19 @@ const CasinoPage = () => {
 						</Text>
 					</Box>
 
+					<Box>
+						<Button 
+							size='sm' 
+							leftIcon={<Icon as={IoGameControllerOutline} />} 
+							colorScheme='purple' 
+							variant='solid' 
+							borderRadius='12px' 
+							onClick={() => { navigate('/casino/games'); triggerHaptic(); }}
+							boxShadow='0 4px 14px 0 rgba(128, 90, 213, 0.39)'
+						>
+							Games
+						</Button>
+					</Box>
 				</Flex>
 
 				<HStack overflowX='auto' pb={4} mb={2} spacing={3} sx={{ '&::-webkit-scrollbar': { display: 'none' } }}>
@@ -141,11 +154,11 @@ const CasinoPage = () => {
 						<Text fontSize='10px' fontWeight='700' color='textPrimary'>Market</Text>
 					</VStack>
 
-					{roommates.map((r) => (
+					{(roommates || []).map((r) => (
 						<VStack key={r.id} spacing={1} cursor='pointer' onClick={() => { setFilter(r.id); triggerHaptic(); }} opacity={filter === r.id ? 1 : 0.4} transition='opacity 0.2s'>
 							<Avatar size='md' name={r.displayName} bg={r.color} color='white' border={filter === r.id ? '2px solid' : 'none'} borderColor='primaryAction' />
 							<Text fontSize='10px' fontWeight='700' color='textPrimary'>
-								{r.id === user?.uid ? 'You' : r.displayName.split(' ')[0]}
+								{r.id === user?.uid ? 'You' : (r.displayName?.split(' ')[0] || 'User')}
 							</Text>
 						</VStack>
 					))}

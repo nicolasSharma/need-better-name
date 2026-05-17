@@ -61,7 +61,7 @@ export async function adjustUserBalance(adminId: string, targetUserId: string, a
 			type: 'admin_adjustment',
 			userId: targetUserId,
 			amount,
-			reason,
+			description: `Admin adjustment: ${reason}`,
 			relatedId: adminId,
 			createdAt: serverTimestamp(),
 		});
@@ -93,7 +93,8 @@ export async function createChore(
 				type: 'bounty_escrow',
 				userId: creatorId,
 				amount: -reward,
-				relatedId: 'new_bounty', // We don't have the ref ID yet in this scope easily without creating it first, let's create it
+				description: `Escrow for bounty: ${name}`,
+				relatedId: 'new_bounty',
 				createdAt: serverTimestamp(),
 			});
 
@@ -181,6 +182,7 @@ export async function approveChore(choreId: string, reviewerId: string) {
 			type: chore.type === 'bounty' ? 'bounty_reward' : 'chore_reward',
 			userId: workerId,
 			amount: chore.reward,
+			description: `${chore.type === 'bounty' ? 'Bounty' : 'Task'} completed: "${chore.name}"`,
 			relatedId: choreId,
 			createdAt: serverTimestamp(),
 		});
@@ -329,6 +331,7 @@ export async function createMarket(
 
 		tx.set(doc(collection(db, 'transactions')), {
 			type: 'bet_placed', userId: creatorId, amount: -betAmount,
+			description: `Opened contract: "${question}" (Pick: ${selectedOptionId})`,
 			relatedId: marketRef.id, createdAt: serverTimestamp(),
 		});
 
@@ -345,6 +348,7 @@ export async function createMarket(
 
 		tx.set(doc(collection(db, 'transactions')), {
 			type: 'house_seed', userId: 'house', amount: -totalSeed,
+			description: `House liquidity seed for: "${question}"`,
 			relatedId: marketRef.id, createdAt: serverTimestamp(),
 		});
 
@@ -378,6 +382,7 @@ export async function placeBet(marketId: string, userId: string, optionId: strin
 
 		tx.set(doc(collection(db, 'transactions')), {
 			type: 'bet_placed', userId, amount: -amount,
+			description: `Bet on "${marketSnap.data().question}" (Pick: ${optionId})`,
 			relatedId: marketId, createdAt: serverTimestamp(),
 		});
 	});
@@ -460,6 +465,7 @@ export async function resolveMarket(marketId: string, outcome: string, reviewerI
 				tx.update(doc(db, 'users', bet.userId), { balance: increment(payout) });
 				tx.set(doc(collection(db, 'transactions')), {
 					type: 'bet_payout', userId: bet.userId, amount: payout,
+					description: `Won ${payout} BT on "${market.question}" (${outcome})`,
 					relatedId: marketId, createdAt: serverTimestamp(),
 					resolvedBy: reviewerId || null,
 				});
@@ -493,6 +499,7 @@ export async function buyPerk(perkId: string, userId: string) {
 
 		tx.set(doc(collection(db, 'transactions')), {
 			type: 'perk_purchase', userId, amount: -perk.cost,
+			description: `Purchased perk: ${perk.name}`,
 			relatedId: perkId, createdAt: serverTimestamp(),
 		});
 	});
@@ -554,8 +561,9 @@ export async function settleDebt(fromId: string, toId: string, amount: number) {
 	batch.set(doc(collection(db, 'transactions')), {
 		type: 'usd_payment',
 		userId: fromId,
-		amount: -amount, // visually negative for the payer, but the ledger usually shows absolute or green depending on perspective. Let's log it accurately in USD.
-		relatedId: toId, // Log who they paid
+		amount: -amount, 
+		description: `Physical payment settled to peer`,
+		relatedId: toId,
 		createdAt: serverTimestamp(),
 	});
 
@@ -590,5 +598,34 @@ export function pushAlert(tx: any, targetId: string, category: string, title: st
 		body,
 		read: false,
 		createdAt: serverTimestamp(),
+	});
+}
+
+export async function playCasinoGame(
+	userId: string, 
+	betAmount: number, 
+	payout: number, 
+	gameType: 'blackjack' | 'roulette' | 'streak' | 'craps' | 'race',
+	detail: string
+) {
+	return runTransaction(db, async (tx) => {
+		const userRef = doc(db, 'users', userId);
+		const userSnap = await tx.get(userRef);
+		if (!userSnap.exists()) throw new Error('User not found');
+		
+		const houseRef = doc(db, 'house', 'main');
+		const netChange = payout - betAmount;
+		
+		tx.update(userRef, { balance: increment(netChange) });
+		tx.update(houseRef, { fundBalance: increment(-netChange) });
+
+		tx.set(doc(collection(db, 'transactions')), {
+			type: `gamble_${gameType}`,
+			userId,
+			amount: netChange,
+			description: detail,
+			relatedId: `house_${gameType}`,
+			createdAt: serverTimestamp(),
+		});
 	});
 }

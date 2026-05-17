@@ -86,3 +86,41 @@ export const playChime = () => {
 		console.warn('Audio play failed', e);
 	}
 };
+
+export const playCardFlip = () => {
+	try {
+		const ctx = initAudio();
+		const osc = ctx.createOscillator();
+		const gain = ctx.createGain();
+		osc.type = 'square';
+		osc.frequency.setValueAtTime(400, ctx.currentTime);
+		osc.frequency.exponentialRampToValueAtTime(100, ctx.currentTime + 0.05);
+		gain.gain.setValueAtTime(0.05, ctx.currentTime);
+		gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.05);
+		osc.connect(gain);
+		gain.connect(ctx.destination);
+		osc.start();
+		osc.stop(ctx.currentTime + 0.05);
+	} catch (e) {}
+};
+
+export const playWin = () => {
+	try {
+		const ctx = initAudio();
+		const playNote = (freq: number, start: number) => {
+			const osc = ctx.createOscillator();
+			const gain = ctx.createGain();
+			osc.frequency.value = freq;
+			gain.gain.setValueAtTime(0.1, start);
+			gain.gain.exponentialRampToValueAtTime(0.001, start + 0.5);
+			osc.connect(gain);
+			gain.connect(ctx.destination);
+			osc.start(start);
+			osc.stop(start + 0.5);
+		};
+		playNote(523.25, ctx.currentTime);
+		playNote(659.25, ctx.currentTime + 0.1);
+		playNote(783.99, ctx.currentTime + 0.2);
+		playNote(1046.50, ctx.currentTime + 0.3);
+	} catch (e) {}
+};

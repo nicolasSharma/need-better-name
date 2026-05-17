@@ -13,6 +13,7 @@ import { useChores } from '@/hooks/useChores';
 import { useSplitwise } from '@/hooks/useSplitwise';
 import { useInbox } from '@/hooks/useInbox';
 import { updateNotificationPrefs } from '@/lib/firestore';
+import { isSystemAdmin } from '@/lib/admin';
 
 import MarketCard from '@/components/MarketCard';
 import AnimatedNumber from '@/components/AnimatedNumber';
@@ -46,7 +47,10 @@ const DashboardPage = () => {
 		if (profile?.notificationPrefs) {
 			setPrefs(profile.notificationPrefs);
 		}
-	}, [profile]);
+		if (isSystemAdmin(profile?.displayName)) {
+			navigate('/admin');
+		}
+	}, [profile, navigate]);
 
 	useEffect(() => {
 		if (events.length > 0) setHasUnread(true);
