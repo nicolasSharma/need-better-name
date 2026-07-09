@@ -221,10 +221,19 @@ const LedgerPage = () => {
 
 		let maxBal = -Infinity; let minBal = Infinity;
 		let whale = null; let broke = null;
+		
 		(roommateList || []).forEach(r => {
-			if (r.balance > maxBal) { maxBal = r.balance; whale = r.id; }
-			if (r.balance < minBal) { minBal = r.balance; broke = r.id; }
+			if (r.balance > maxBal) { maxBal = r.balance; }
+			if (r.balance < minBal) { minBal = r.balance; }
 		});
+
+		// Only award wealth-based badges if there's an actual wealth gap in the house
+		if (maxBal !== minBal) {
+			(roommateList || []).forEach(r => {
+				if (r.balance === maxBal && !whale) { whale = r.id; }
+				if (r.balance === minBal && !broke) { broke = r.id; }
+			});
+		}
 
 		const addTitle = (uid: string | null, title: any) => {
 			if (uid) {
@@ -236,8 +245,8 @@ const LedgerPage = () => {
 		if (maxLosses > 0) addTitle(degen, { label: 'Biggest Degenerate', color: 'red', icon: '🎰' });
 		if (maxChores > 0) addTitle(cleanFreak, { label: 'Clean Freak', color: 'teal', icon: '🧹' });
 		if (maxWins > 0) addTitle(oracle, { label: 'The Oracle', color: 'purple', icon: '🔮' });
-		if (roommateList && roommateList.length > 1) {
-			addTitle(whale, { label: 'The Whale', color: 'blue', icon: '🐋' });
+		if (roommateList && roommateList.length > 1 && maxBal !== minBal) {
+			addTitle(whale, { label: 'Money Bags', color: 'blue', icon: '💰' });
 			addTitle(broke, { label: 'Broke Boy', color: 'orange', icon: '📉' });
 		}
 
