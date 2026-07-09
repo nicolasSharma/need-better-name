@@ -26,6 +26,7 @@ export async function sendPing(senderId: string, targetId: string, cost: number 
 			senderId,
 			targetId,
 			cost,
+			played: false,
 			createdAt: serverTimestamp(),
 		});
 
@@ -39,4 +40,9 @@ export async function sendPing(senderId: string, targetId: string, cost: number 
 			createdAt: serverTimestamp(),
 		});
 	});
+}
+
+export async function markPingPlayed(pingId: string) {
+	const { doc, updateDoc } = await import('firebase/firestore');
+	await updateDoc(doc(db, 'pings', pingId), { played: true });
 }

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Box, Flex, Heading, Text, VStack, HStack, Avatar, Icon, Button, useDisclosure, Modal, ModalOverlay, ModalContent, ModalHeader, ModalBody, ModalCloseButton, Switch, Divider, Badge, useColorMode, IconButton } from '@chakra-ui/react';
+import { Box, Flex, Heading, Text, VStack, HStack, Avatar, Icon, Button, useDisclosure, Modal, ModalOverlay, ModalContent, ModalHeader, ModalBody, ModalCloseButton, Switch, Divider, Badge, useColorMode, IconButton, useToast } from '@chakra-ui/react';
 import { useNavigate } from 'react-router-dom';
 import { 
 	IoCheckmarkCircleOutline, IoWarningOutline, IoNotificationsOutline, 

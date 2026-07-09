@@ -1,9 +1,9 @@
-import { lazy, Suspense, useEffect } from 'react';
+import { lazy, Suspense, useEffect, useRef } from 'react';
 import { ChakraProvider, Box, VStack, useToast } from '@chakra-ui/react';
 import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { AuthProvider } from '@/context/AuthProvider';
-import { AppDataProvider } from '@/context/AppDataProvider';
+import { AppDataProvider, useRoommates } from '@/context/AppDataProvider';
 import theme from '@/config/theme';
 import { onMessage } from 'firebase/messaging';
 import { messaging } from '@/config/firebase';
@@ -67,6 +67,7 @@ const AppContent = () => {
 	const showNavs = !isAuthPage;
 	const toast = useToast();
 	const { user } = useAuth();
+	const { roommates } = useRoommates();
 
 	// Active Presence Heartbeat
 	useEffect(() => {
@@ -129,6 +130,106 @@ const AppContent = () => {
 			if (unsub) unsub();
 		};
 	}, [user]);
+
+	// Listen to real-time pings/pokes
+	useEffect(() => {
+		if (!user) return;
+
+		let unsub: (() => void) | undefined;
+
+		const setupPingListener = async () => {
+			try {
+				const { collection, query, where, onSnapshot } = await import('firebase/firestore');
+				const { db } = await import('@/config/firebase');
+				const { markPingPlayed } = await import('@/lib/services/pings');
+
+				const q = query(
+					collection(db, 'pings'),
+					where('targetId', '==', user.uid),
+					where('played', '==', false)
+				);
+
+				unsub = onSnapshot(q, (snap) => {
+					snap.docs.forEach((d) => {
+						const ping = d.data();
+						const senderName = roommates.find(r => r.id === ping.senderId)?.displayName?.split(' ')[0] || 'Someone';
+						
+						// Play Alarm sound
+						const audio = new Audio(SOUNDS.alarm);
+						audio.play().catch(e => console.error('Audio play blocked:', e));
+
+						// Show browser notification
+						if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+							new window.Notification("🚨 POKE!", {
+								body: `${senderName} wants to drink.`,
+								icon: '/favicon.ico'
+							});
+						}
+
+						markPingPlayed(d.id);
+					});
+				});
+			} catch (e) {
+				console.error('Error setting up ping listener:', e);
+			}
+		};
+
+		setupPingListener();
+
+		return () => {
+			if (unsub) unsub();
+		};
+	}, [user, roommates]);
+
+	// Listen to real-time toasts (Drink button)
+	const lastToastTimeRef = useRef<any>(null);
+	useEffect(() => {
+		if (!user) return;
+
+		let unsub: (() => void) | undefined;
+
+		const setupToastListener = async () => {
+			try {
+				const { doc, onSnapshot } = await import('firebase/firestore');
+				const { db } = await import('@/config/firebase');
+
+				unsub = onSnapshot(doc(db, 'house', 'main'), (snap) => {
+					if (snap.exists()) {
+						const data = snap.data();
+						const lastToast = data.lastToast;
+						if (lastToast && lastToast.timestamp) {
+							const timestamp = lastToast.timestamp.toMillis ? lastToast.timestamp.toMillis() : lastToast.timestamp;
+							// Only trigger if it's a new toast since page load or last seen
+							if (lastToastTimeRef.current && timestamp > lastToastTimeRef.current) {
+								const senderName = roommates.find(r => r.id === lastToast.triggeredBy)?.displayName?.split(' ')[0] || 'Someone';
+								
+								// Play Cheers sound
+								const audio = new Audio(SOUNDS.cheers);
+								audio.play().catch(e => console.error('Audio play blocked:', e));
+
+								// Show browser notification
+								if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+									new window.Notification("TIME TO DRINK! 🍻", {
+										body: `${senderName} called a toast!`,
+										icon: '/favicon.ico'
+									});
+								}
+							}
+							lastToastTimeRef.current = timestamp;
+						}
+					}
+				});
+			} catch (e) {
+				console.error('Error setting up toast listener:', e);
+			}
+		};
+
+		setupToastListener();
+
+		return () => {
+			if (unsub) unsub();
+		};
+	}, [user, roommates]);
 
 	useEffect(() => {
 		try {
