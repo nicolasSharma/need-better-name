@@ -1,8 +1,8 @@
 import { Box, VStack, Icon, Text, Flex, Divider } from '@chakra-ui/react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { IoHome, IoCheckmarkDone, IoDice, IoGift, IoLogOut } from 'react-icons/io5';
-import { useUser } from '@/hooks/useUser';
-import { logOut } from '@/lib/firestore';
+import { useUser } from '@/context/AppDataProvider';
+import { logOut } from '@/lib/services';
 import BalanceBadge from '@/components/BalanceBadge';
 
 const navItems = [

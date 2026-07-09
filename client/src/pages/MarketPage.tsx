@@ -2,18 +2,35 @@ import { useState, useMemo, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Box, Heading, Text, Flex, VStack, Badge, Button, Divider, useToast, HStack, Icon, Select } from '@chakra-ui/react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useMarket } from '@/hooks/useMarkets';
-import { useAuth } from '@/hooks/useAuth';
-import { useUser } from '@/hooks/useUser';
-import { resolveMarket, proposeMarketResolution } from '@/lib/firestore';
+import { useMarket } from '@/hooks/useMarket';
+import { useAuth } from '@/context/AuthProvider';
+import { useUser, useRoommates } from '@/context/AppDataProvider';
+import { resolveMarket, challengeResolution, resolveDispute } from '@/lib/services';
 import { calcPayouts } from '@/lib/engine';
-import { collection, query, orderBy, getDocs } from 'firebase/firestore';
-import { db } from '@/config/firebase';
 import BetSlip from '@/components/BetSlip';
-import { IoArrowBack, IoTrendingUpOutline } from 'react-icons/io5';
-import { filterHouseMembers, isSystemAdmin } from '@/lib/admin';
+import { IoArrowBack, IoTrendingUpOutline, IoTimeOutline, IoWarningOutline, IoShareOutline } from 'react-icons/io5';
+import { isSystemAdmin } from '@/lib/admin';
 
-const statusColors: Record<string, string> = { open: 'green', locked: 'yellow', resolved: 'gray', pending_resolution: 'orange' };
+const statusColors: Record<string, string> = { open: 'green', locked: 'yellow', resolved: 'gray', pending_resolution: 'orange', disputed: 'red' };
+
+const useCountdown = (deadline: any) => {
+	const [timeLeft, setTimeLeft] = useState('');
+	const [expired, setExpired] = useState(false);
+	useEffect(() => {
+		if (!deadline) { setTimeLeft(''); setExpired(false); return; }
+		const target = typeof deadline.toDate === 'function' ? deadline.toDate().getTime() : new Date(deadline).getTime();
+		const tick = () => {
+			const diff = target - Date.now();
+			if (diff <= 0) { setTimeLeft('Expired'); setExpired(true); return; }
+			const h = Math.floor(diff / 3600000); const m = Math.floor((diff % 3600000) / 60000); const s = Math.floor((diff % 60000) / 1000);
+			setTimeLeft(`${h}h ${m}m ${s}s`);
+		};
+		tick();
+		const interval = setInterval(tick, 1000);
+		return () => clearInterval(interval);
+	}, [deadline]);
+	return { timeLeft, expired };
+};
 const palette = ['#30D158', '#0A84FF', '#BF5AF2', '#FF9F0A', '#FF453A', '#64D2FF'];
 
 // Multi-Trace Step-Graph Component
@@ -199,17 +216,12 @@ const MarketPage = () => {
 	const navigate = useNavigate();
 	const toast = useToast();
 	const { profile } = useUser();
+	const { roommates } = useRoommates();
 
 	const [settleOutcome, setSettleOutcome] = useState('');
-	const [roommates, setRoommates] = useState<any[]>([]);
 
-	useEffect(() => {
-		const fetchUsers = async () => {
-			const snap = await getDocs(query(collection(db, 'users'), orderBy('displayName')));
-			setRoommates(filterHouseMembers(snap.docs.map(d => ({ id: d.id, ...d.data() } as any))));
-		};
-		fetchUsers();
-	}, []);
+	const { timeLeft: challengeTimeLeft, expired: challengeExpired } = useCountdown(market?.challengeDeadline);
+	const { timeLeft: expiryTimeLeft, expired: marketExpired } = useCountdown(market?.expiresAt);
 
 	if (loading || !market) return <Box p={8}><Text>Syncing Exchange...</Text></Box>;
 
@@ -224,46 +236,97 @@ const MarketPage = () => {
 		myHoldings[optId] = (myHoldings[optId] || 0) + b.amount;
 	});
 
-	const handlePropose = async () => {
-		if (!settleOutcome) return;
-
-		// 1. Get all bettors (userIds from bets)
-		const bettorIds = Array.from(new Set(bets.map(b => b.userId)));
-		
-		// 2. Impartial = not in bettorIds, not user.uid, and NOT the system admin
-		const impartial = roommates.filter(r => !bettorIds.includes(r.id) && r.id !== user?.uid && !isSystemAdmin(r.displayName));
-		let reviewerId = user?.uid; // Fallback
-		
-		if (impartial.length > 0) {
-			reviewerId = impartial[Math.floor(Math.random() * impartial.length)].id;
-		} else {
-			// If all are in the market, pick a random one excluding user and admin
-			const others = roommates.filter(r => r.id !== user?.uid && !isSystemAdmin(r.displayName));
-			if (others.length > 0) reviewerId = others[Math.floor(Math.random() * others.length)].id;
-		}
-
+	const handleResolve = async () => {
+		if (!settleOutcome || !user) return;
 		try {
-			await proposeMarketResolution(market.id, settleOutcome, reviewerId!);
-			toast({ title: `Settlement proposed. Sent to impartial reviewer!`, status: 'info' });
+			await resolveMarket(market.id, settleOutcome);
+			toast({ title: 'Market resolved! A 24hr challenge window is now open.', status: 'success' });
 		} catch (e: any) {
 			toast({ title: 'Error', description: e.message, status: 'error' });
 		}
 	};
 
+	const handleChallenge = async () => {
+		if (!user) return;
+		try {
+			await challengeResolution(market.id, user.uid);
+			toast({ title: 'Challenge filed! An impartial reviewer has been assigned.', status: 'info' });
+		} catch (e: any) {
+			toast({ title: 'Error', description: e.message, status: 'error' });
+		}
+	};
+
+	const handleDisputeResolve = async () => {
+		if (!settleOutcome || !user) return;
+		try {
+			await resolveDispute(market.id, settleOutcome, user.uid);
+			toast({ title: 'Dispute resolved!', status: 'success' });
+		} catch (e: any) {
+			toast({ title: 'Error', description: e.message, status: 'error' });
+		}
+	};
+
+
+	const isBettor = bets.some(b => b.userId === user?.uid && !b.isHouseSeed);
+	const canChallenge = market.status === 'resolved' && market.challengeDeadline && !challengeExpired && isBettor && market.creatorId !== user?.uid;
+	const isDisputeReviewer = market.status === 'disputed' && market.reviewerId === user?.uid;
+
 	return (
 		<Box p={8} maxW='800px' mx='auto'>
-			<Button leftIcon={<IoArrowBack />} variant='ghost' size='sm' onClick={() => navigate('/casino')} mb={8} color='textSecondary'>
-				Back to Exchange
-			</Button>
+			<Flex justify='space-between' align='center' mb={8}>
+				<Button leftIcon={<IoArrowBack />} variant='ghost' size='sm' onClick={() => navigate('/casino')} color='textSecondary'>
+					Back to Exchange
+				</Button>
+				<Button
+					size='sm'
+					variant='surface'
+					leftIcon={<IoShareOutline />}
+					onClick={async () => {
+						const url = window.location.href;
+						if (navigator.share) {
+							try {
+								await navigator.share({
+									title: market.question,
+									text: `Check out this market on The Hub!`,
+									url: url
+								});
+							} catch (e) {
+								console.error('Share failed', e);
+							}
+						} else {
+							navigator.clipboard.writeText(url);
+							toast({ title: 'Link copied!', status: 'success', duration: 1500 });
+						}
+					}}
+				>
+					Share
+				</Button>
+			</Flex>
 
 			<Box mb={8}>
 				<Heading size='2xl' fontWeight='900' color='textPrimary' mb={3}>{market.question}</Heading>
-				<HStack spacing={4}>
-					<Badge colorScheme={statusColors[market.status]} borderRadius='6px' px={2} py={1}>
-						{market.status === 'pending_resolution' ? 'PENDING RESOLUTION' : market.status.toUpperCase()}
+				<HStack spacing={4} flexWrap='wrap'>
+					<Badge colorScheme={statusColors[market.status] || 'gray'} borderRadius='6px' px={2} py={1}>
+						{market.status === 'pending_resolution' ? 'PENDING RESOLUTION' : market.status === 'disputed' ? 'DISPUTED' : market.status.toUpperCase()}
 					</Badge>
 					<Text fontSize='sm' color='textSecondary' fontWeight='700' fontFamily='JetBrains Mono'>VOL: {totalVolume} BT</Text>
+					{market.expiresAt && market.status === 'open' && (
+						<Badge colorScheme={marketExpired ? 'red' : 'yellow'} borderRadius='6px' px={2} py={1}>
+							<HStack spacing={1}><Icon as={IoTimeOutline} boxSize={3} /><Text>{marketExpired ? 'EXPIRED' : expiryTimeLeft}</Text></HStack>
+						</Badge>
+					)}
+					{market.challengeDeadline && !challengeExpired && market.status === 'resolved' && (
+						<Badge colorScheme='orange' borderRadius='6px' px={2} py={1}>
+							<HStack spacing={1}><Icon as={IoWarningOutline} boxSize={3} /><Text>Challenge: {challengeTimeLeft}</Text></HStack>
+						</Badge>
+					)}
 				</HStack>
+
+				{market.outcome && (
+					<Badge colorScheme='green' mt={4} fontSize='md' px={4} py={2} borderRadius='lg'>
+						OUTCOME: {market.outcome}
+					</Badge>
+				)}
 
 				<VStack align='flex-start' spacing={3} mt={8}>
 					{market.options.map((opt, i) => (
@@ -278,16 +341,25 @@ const MarketPage = () => {
 				</VStack>
 			</Box>
 
+			{marketExpired && market.status === 'open' && isCreatorOrAdmin && (
+				<Box mb={8} bg='noAction' p={4} borderRadius='16px' color='white'>
+					<HStack><Icon as={IoWarningOutline} /><Text fontWeight='800'>This market has expired. New bets are blocked. Please resolve it now.</Text></HStack>
+				</Box>
+			)}
+
 			<ProbabilityGraph market={market} bets={bets} />
 
 			<Flex gap={8} direction={{ base: 'column', md: 'row' }}>
 				<Box flex={1}>
 					<Box bg='surface' p={6} borderRadius='18px' border='1px solid' borderColor='border' shadow='sm'>
 						<Text fontSize='10px' color='textSecondary' fontWeight='800' mb={4} textTransform='uppercase'>Acquire Shares</Text>
-						<BetSlip market={market} />
+						{marketExpired && market.status === 'open' ? (
+							<Text color='textSecondary' fontSize='sm'>Betting is closed — market expired.</Text>
+						) : (
+							<BetSlip market={market} />
+						)}
 					</Box>
 				</Box>
-
 				<Box flex={1}>
 					<Box bg='surfaceDeep' p={6} borderRadius='18px' border='1px solid' borderColor='border' mb={6}>
 						<Text fontSize='10px' color='textSecondary' fontWeight='800' mb={4} textTransform='uppercase'>Your Holdings</Text>
@@ -300,17 +372,75 @@ const MarketPage = () => {
 							))}
 						</VStack>
 					</Box>
+
+					{/* Bettor Activity */}
+					<Box bg='surfaceDeep' p={6} borderRadius='18px' border='1px solid' borderColor='border'>
+						<Text fontSize='10px' color='textSecondary' fontWeight='800' mb={4} textTransform='uppercase'>Market Participants</Text>
+						{(() => {
+							const uniqueBettors = [...new Set(bets.filter(b => !b.isHouseSeed).map(b => b.userId))];
+							if (uniqueBettors.length === 0) return <Text fontSize='sm' color='textSecondary'>No participants yet.</Text>;
+							return (
+								<VStack align='stretch' spacing={2}>
+									{uniqueBettors.map((uid, i) => {
+										const rm = roommates.find((r: any) => r.id === uid);
+										const isMe = uid === user?.uid;
+										const userBets = bets.filter(b => b.userId === uid && !b.isHouseSeed);
+										const totalStake = userBets.reduce((a, b) => a + b.amount, 0);
+										return (
+											<Flex key={uid} justify='space-between' align='center'>
+												<Text fontSize='sm' fontWeight='700' color={isMe ? 'primaryAction' : 'textPrimary'}>
+													{isMe ? 'You' : (rm?.displayName?.split(' ')[0] || `Participant ${i + 1}`)}
+												</Text>
+												<Text fontFamily='JetBrains Mono' fontWeight='700' fontSize='sm' color='textSecondary'>{totalStake} BT</Text>
+											</Flex>
+										);
+									})}
+								</VStack>
+							);
+						})()}
+					</Box>
 				</Box>
 			</Flex>
 
+			{/* Creator: Direct Resolve */}
 			{isCreatorOrAdmin && market.status === 'open' && (
-				<Box mt={12} bg='surface' p={8} borderRadius='24px' border='1px solid' borderColor='yellow.400' borderStyle='dashed'>
-					<Text color='textPrimary' fontWeight='900' mb={4} fontSize='lg'>PROPOSE SETTLEMENT</Text>
+				<Box mt={12} bg='surface' p={8} borderRadius='24px' border='1px solid' borderColor='yesAction' borderStyle='dashed'>
+					<Text color='textPrimary' fontWeight='900' mb={2} fontSize='lg'>RESOLVE MARKET</Text>
+					<Text color='textSecondary' fontSize='sm' mb={4}>Select the winning outcome. Payouts happen instantly. Other bettors have 24hrs to challenge.</Text>
 					<HStack>
 						<Select placeholder='Select Winning Outcome' value={settleOutcome} onChange={(e) => setSettleOutcome(e.target.value)} bg='bg'>
 							{market.options.map(opt => <option key={opt} value={opt}>{opt}</option>)}
 						</Select>
-						<Button colorScheme='yellow' px={8} onClick={handlePropose}>SUBMIT TO REVIEW</Button>
+						<Button colorScheme='green' px={8} onClick={handleResolve} isDisabled={!settleOutcome}>RESOLVE</Button>
+					</HStack>
+				</Box>
+			)}
+
+			{/* Challenge Button */}
+			{canChallenge && (
+				<Box mt={8} bg='surface' p={6} borderRadius='24px' border='1px solid' borderColor='orange.400'>
+					<Text color='textPrimary' fontWeight='900' mb={2}>DISPUTE THIS RESOLUTION</Text>
+					<Text color='textSecondary' fontSize='sm' mb={4}>
+						This market was resolved as "{market.outcome}". If you disagree, challenge it within {challengeTimeLeft}. An impartial reviewer will decide.
+					</Text>
+					<Button colorScheme='orange' onClick={handleChallenge} w='100%' h='50px' fontWeight='900'>
+						CHALLENGE RESOLUTION
+					</Button>
+				</Box>
+			)}
+
+			{/* Dispute Reviewer */}
+			{isDisputeReviewer && (
+				<Box mt={8} bg='surface' p={8} borderRadius='24px' border='2px solid' borderColor='red.400'>
+					<Text color='noAction' fontWeight='900' mb={2} fontSize='lg'>⚖️ YOU ARE THE JUDGE</Text>
+					<Text color='textSecondary' fontSize='sm' mb={4}>
+						This market's original resolution ("{market.outcome}") was challenged. Pick the correct outcome.
+					</Text>
+					<HStack>
+						<Select placeholder='Select Correct Outcome' value={settleOutcome} onChange={(e) => setSettleOutcome(e.target.value)} bg='bg'>
+							{market.options.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+						</Select>
+						<Button colorScheme='red' px={8} onClick={handleDisputeResolve} isDisabled={!settleOutcome}>FINALIZE</Button>
 					</HStack>
 				</Box>
 			)}

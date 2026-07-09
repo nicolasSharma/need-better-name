@@ -1,24 +1,20 @@
-import { useState, useEffect } from 'react';
+import { useState, useCallback } from 'react';
 import {
 	Box, Flex, Text, VStack, Button, Input, NumberInput, NumberInputField, 
 	Modal, ModalOverlay, ModalContent, ModalHeader, ModalBody, ModalCloseButton,
 	useDisclosure, useToast, Select, Avatar, IconButton, Divider, HStack, Icon
 } from '@chakra-ui/react';
 import { useNavigate } from 'react-router-dom';
-import { collection, query, getDocs, orderBy } from 'firebase/firestore';
-import { db } from '@/config/firebase';
-import { useMarkets } from '@/hooks/useMarkets';
-import { useAuth } from '@/hooks/useAuth';
-import { useUser, UserProfile } from '@/hooks/useUser';
-import { createMarket } from '@/lib/firestore';
+import { useMarkets, useUser, useRoommates } from '@/context/AppDataProvider';
+import { useAuth } from '@/context/AuthProvider';
+import { createMarket } from '@/lib/services';
 import MarketCard from '@/components/MarketCard';
 import Skeleton from '@/components/Skeleton';
+import PullToRefresh from '@/components/PullToRefresh';
 import { triggerHaptic } from '@/lib/haptics';
 import TutorialWizard from '@/components/TutorialWizard';
+import DailySpin from '@/components/DailySpin';
 import { IoAdd, IoTrashOutline, IoGameControllerOutline, IoSearchOutline, IoCheckmarkCircleOutline, IoStatsChartOutline } from 'react-icons/io5';
-import { filterHouseMembers } from '@/lib/admin';
-
-interface Roommate extends UserProfile { id: string; }
 
 const CasinoPage = () => {
 	const navigate = useNavigate();
@@ -28,21 +24,13 @@ const CasinoPage = () => {
 	const { isOpen, onOpen, onClose } = useDisclosure();
 	const toast = useToast();
 
-	const [roommates, setRoommates] = useState<Roommate[]>([]);
+	const { roommates } = useRoommates();
 	const [question, setQuestion] = useState('');
 	const [betAmount, setBetAmount] = useState('100');
 	const [options, setOptions] = useState<string[]>(['YES', 'NO']);
 	const [selectedOption, setSelectedOption] = useState('YES');
 	const [taggedUser, setTaggedUser] = useState<string>(''); 
 	const [filter, setFilter] = useState<string>('all');
-
-	useEffect(() => {
-		const fetchUsers = async () => {
-			const snap = await getDocs(query(collection(db, 'users'), orderBy('displayName')));
-			setRoommates(filterHouseMembers(snap.docs.map(d => ({ id: d.id, ...d.data() } as Roommate))));
-		};
-		fetchUsers();
-	}, []);
 
 	const addOption = () => {
 		triggerHaptic();
@@ -97,7 +85,12 @@ const CasinoPage = () => {
 		return m.taggedUserId === filter;
 	});
 
+	const handleRefresh = useCallback(async () => {
+		await new Promise(r => setTimeout(r, 400));
+	}, []);
+
 	return (
+		<PullToRefresh onRefresh={handleRefresh}>
 		<Box pb={8}>
 			<TutorialWizard 
 				pageKey="casino" 
@@ -146,6 +139,8 @@ const CasinoPage = () => {
 					</Box>
 				</Flex>
 
+				<DailySpin />
+
 				<HStack overflowX='auto' pb={4} mb={2} spacing={3} sx={{ '&::-webkit-scrollbar': { display: 'none' } }}>
 					<VStack spacing={1} cursor='pointer' onClick={() => { setFilter('all'); triggerHaptic(); }} opacity={filter === 'all' ? 1 : 0.5}>
 						<Flex w='48px' h='48px' borderRadius='full' bg='surfaceDeep' border='2px solid' borderColor={filter === 'all' ? 'primaryAction' : 'border'} align='center' justify='center'>
@@ -180,7 +175,9 @@ const CasinoPage = () => {
 				)}
 			</Box>
 
+
 		</Box>
+		</PullToRefresh>
 	);
 };
 

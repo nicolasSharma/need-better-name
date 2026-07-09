@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
 import { Box, Flex, Heading, Text, VStack, Button, Input, HStack, useToast, Divider } from '@chakra-ui/react';
-import { collection, query, onSnapshot, orderBy } from 'firebase/firestore';
-import { db } from '@/config/firebase';
-import { useAuth } from '@/hooks/useAuth';
-import { useUser, UserProfile } from '@/hooks/useUser';
-import { adjustUserBalance, grantAdmin } from '@/lib/firestore';
+import { collection, query, onSnapshot, orderBy, writeBatch, getDocs } from 'firebase/firestore';
+import { db, auth } from '@/config/firebase';
+import { useAuth } from '@/context/AuthProvider';
+import { useUser } from '@/context/AppDataProvider';
+import type { UserProfile } from '@/types';
+import { adjustUserBalance, grantAdmin } from '@/lib/services';
 import { useHouseFund } from '@/hooks/useHouseFund';
 import AnimatedNumber from '@/components/AnimatedNumber';
 import { filterHouseMembers } from '@/lib/admin';
@@ -25,6 +26,7 @@ const AdminPage = () => {
 
 	const [users, setUsers] = useState<AdminUserProfile[]>([]);
 	const [amounts, setAmounts] = useState<Record<string, string>>({});
+	const [actionLoading, setActionLoading] = useState<string | null>(null);
 
 	useEffect(() => {
 		const q = query(collection(db, 'users'), orderBy('createdAt', 'desc'));
@@ -66,13 +68,87 @@ const AdminPage = () => {
 		}
 	};
 
+	const handleSystemReset = async () => {
+		if (!window.confirm("Are you sure you want to delete all tasks, close open markets, and reset user balances to 500? This cannot be undone!")) return;
+		
+		setActionLoading('reset');
+		try {
+			// 1. Delete all chores
+			const choresSnap = await getDocs(collection(db, 'chores'));
+			let batch = writeBatch(db);
+			let count = 0;
+			for (const d of choresSnap.docs) {
+				batch.delete(d.ref);
+				count++;
+				if (count % 400 === 0) {
+					await batch.commit();
+					batch = writeBatch(db);
+				}
+			}
+			if (count % 400 !== 0) {
+				await batch.commit();
+			}
+
+			// 2. Resolve open markets as null
+			const marketsSnap = await getDocs(collection(db, 'markets'));
+			batch = writeBatch(db);
+			count = 0;
+			for (const d of marketsSnap.docs) {
+				const marketData = d.data();
+				if (marketData.status === 'open') {
+					batch.update(d.ref, {
+						status: 'resolved',
+						outcome: null,
+						resolvedAt: new Date()
+					});
+					count++;
+					if (count % 400 === 0) {
+						await batch.commit();
+						batch = writeBatch(db);
+					}
+				}
+			}
+			if (count % 400 !== 0) {
+				await batch.commit();
+			}
+
+			// 3. Reset user balances to 500
+			const usersSnap = await getDocs(collection(db, 'users'));
+			batch = writeBatch(db);
+			count = 0;
+			for (const d of usersSnap.docs) {
+				batch.update(d.ref, {
+					balance: 500
+				});
+				count++;
+				if (count % 400 === 0) {
+					await batch.commit();
+					batch = writeBatch(db);
+				}
+			}
+			if (count % 400 !== 0) {
+				await batch.commit();
+			}
+
+			toast({ title: 'System Reset Completed', description: 'All tasks deleted, open markets resolved, and balances reset.', status: 'success', duration: 5000 });
+		} catch (e: any) {
+			toast({ title: 'Reset Failed', description: e.message, status: 'error' });
+		}
+		setActionLoading(null);
+	};
+
 	return (
 		<Box pb={8} bg='surfaceDeep' minH='100vh'>
 			{/* Admin Header */}
 			<Box pt={10} px={6} pb={8} borderBottom='1px solid' borderColor='border' bg='bg'>
-				<Button leftIcon={<IoArrowBack />} variant='ghost' size='sm' onClick={() => navigate('/')} mb={4} color='textSecondary' px={0}>
-					Exit Console
-				</Button>
+				<Flex justify='space-between' align='center' mb={4}>
+					<Button leftIcon={<IoArrowBack />} variant='ghost' size='sm' onClick={() => navigate('/')} color='textSecondary' px={0}>
+						Exit Console
+					</Button>
+					<Button variant='link' colorScheme='red' size='sm' onClick={() => { auth.signOut(); navigate('/login'); }}>
+						Log Out
+					</Button>
+				</Flex>
 				<Heading size='lg' color='textPrimary' mb={2}>Central Governance</Heading>
 				<Text color='textSecondary' fontSize='sm'>
 					You have root access to The Hub. Be careful.
@@ -134,6 +210,29 @@ const AdminPage = () => {
 					<Text fontSize='4xl' fontWeight='800' color='primaryAction' fontFamily='JetBrains Mono'>
 						<AnimatedNumber value={fund?.fundBalance || 0} /> BT
 					</Text>
+				</Box>
+			</Box>
+
+			{/* System Reset */}
+			<Box px={4} mt={8} pb={12}>
+				<Text fontSize='10px' color='red.400' letterSpacing='widest' fontWeight='700' textTransform='uppercase' mb={4} px={2}>
+					SYSTEM RESET
+				</Text>
+				<Box bg='surface' borderRadius='16px' border='1px solid' borderColor='red.500' p={6}>
+					<Text fontSize='sm' color='textSecondary' mb={4}>
+						Delete all chores, close open markets to null, and reset roommate balances to 500 BT.
+					</Text>
+					<Button 
+						colorScheme='red' 
+						w='100%' 
+						h='50px' 
+						borderRadius='14px' 
+						onClick={handleSystemReset} 
+						isLoading={actionLoading === 'reset'}
+						fontWeight='800'
+					>
+						RESET HOUSE DATABASE 🚨
+					</Button>
 				</Box>
 			</Box>
 		</Box>

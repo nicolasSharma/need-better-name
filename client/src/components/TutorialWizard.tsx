@@ -9,9 +9,9 @@ import {
 	IoNotificationsOutline, IoAddCircleOutline, IoStatsChartOutline, 
 	IoCheckmarkCircleOutline, IoCardOutline, IoWalletOutline, IoArrowForwardOutline 
 } from 'react-icons/io5';
-import { useAuth } from '@/hooks/useAuth';
-import { useUser } from '@/hooks/useUser';
-import { markTutorialViewed, completeSetup } from '@/lib/firestore';
+import { useAuth } from '@/context/AuthProvider';
+import { useUser } from '@/context/AppDataProvider';
+import { markTutorialViewed, completeSetup } from '@/lib/services';
 
 interface Step {
 	title: string;

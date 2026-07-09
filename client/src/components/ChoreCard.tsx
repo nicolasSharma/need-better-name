@@ -1,12 +1,11 @@
-import { useState, useRef } from 'react';
-import { Box, Flex, Text, Badge, Button, useToast, Image, Input, Icon, VStack, HStack, Avatar, Collapse } from '@chakra-ui/react';
+import { useState, useRef, useEffect } from 'react';
+import { Box, Flex, Text, Badge, Button, useToast, Image, Input, Icon, VStack, HStack, Avatar } from '@chakra-ui/react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { IoCameraOutline, IoCheckmarkCircle, IoTimeOutline, IoWalletOutline, IoCalendarOutline } from 'react-icons/io5';
-import { Chore } from '@/hooks/useChores';
-import { UserProfile } from '@/hooks/useUser';
-import { claimChore, submitChoreForReview, bountifyChore } from '@/lib/firestore';
-import { useAuth } from '@/hooks/useAuth';
-import { isSystemAdmin } from '@/lib/admin';
+import { IoCameraOutline, IoCheckmarkCircle, IoTimeOutline, IoWalletOutline, IoCalendarOutline, IoFlashOutline, IoShieldHalf } from 'react-icons/io5';
+import type { Chore } from '@/types';
+import type { UserProfile } from '@/types';
+import { claimChore, submitChoreForReview, bountifyChore, challengeChore, voteOnChallenge, approveChore } from '@/lib/services';
+import { useAuth } from '@/context/AuthProvider';
 import { triggerHaptic } from '@/lib/haptics';
 import { playThump, playChime } from '@/lib/audio';
 import Confetti from '@/components/Confetti';
@@ -23,9 +22,40 @@ const ChoreCard = ({ chore, roommates }: { chore: Chore, roommates: Roommate[] }
 	const [photoBase64, setPhotoBase64] = useState<string | null>(null);
 	const [fireConfetti, setFireConfetti] = useState(false);
 	const fileInputRef = useRef<HTMLInputElement>(null);
+	const [timeRemaining, setTimeRemaining] = useState('');
 
 	const isMine = chore.assigneeId === user?.uid || chore.completedBy === user?.uid || (Array.isArray(chore.assignedTo) && chore.assignedTo.includes(user?.uid || ''));
 	const isBounty = chore.type === 'bounty';
+
+	useEffect(() => {
+		if (!chore.challengeDeadline || chore.status !== 'pending_review') return;
+		const interval = setInterval(() => {
+			const deadline = chore.challengeDeadline.toMillis ? chore.challengeDeadline.toMillis() : (chore.challengeDeadline.seconds * 1000);
+			const diff = deadline - Date.now();
+			if (diff <= 0) {
+				setTimeRemaining('Expired');
+				approveChore(chore.id).catch(console.error);
+				clearInterval(interval);
+			} else {
+				const hours = Math.floor(diff / (1000 * 60 * 60));
+				const mins = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+				setTimeRemaining(`${hours}h ${mins}m left to challenge`);
+			}
+		}, 60000);
+
+		const deadline = chore.challengeDeadline.toMillis ? chore.challengeDeadline.toMillis() : (chore.challengeDeadline.seconds * 1000);
+		const diff = deadline - Date.now();
+		if (diff <= 0) {
+			setTimeRemaining('Expired');
+			approveChore(chore.id).catch(console.error);
+		} else {
+			const hours = Math.floor(diff / (1000 * 60 * 60));
+			const mins = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+			setTimeRemaining(`${hours}h ${mins}m left to challenge`);
+		}
+
+		return () => clearInterval(interval);
+	}, [chore.challengeDeadline, chore.status, chore.id]);
 
 	const handleClaim = async () => {
 		triggerHaptic();
@@ -81,17 +111,10 @@ const ChoreCard = ({ chore, roommates }: { chore: Chore, roommates: Roommate[] }
 
 	const handleComplete = async () => {
 		setLoading(true);
-		
-		const otherRoommates = roommates.filter(r => r.id !== user?.uid && !isSystemAdmin(r.displayName));
-		let reviewerId = user?.uid;
-		if (otherRoommates.length > 0) {
-			reviewerId = otherRoommates[Math.floor(Math.random() * otherRoommates.length)].id;
-		}
-
 		try {
-			await submitChoreForReview(chore.id, user!.uid, reviewerId as string, photoBase64);
+			await submitChoreForReview(chore.id, user!.uid, photoBase64);
 			playChime();
-			toast({ title: `Task sent for review!`, status: 'info', duration: 4000 });
+			toast({ title: `Task submitted for review!`, description: 'Housemates have 24 hours to challenge or it auto-approves.', status: 'info', duration: 5000 });
 			setExpanded(false);
 		} catch (e: any) {
 			toast({ title: 'Verification Error', description: e.message, status: 'error' });
@@ -99,7 +122,42 @@ const ChoreCard = ({ chore, roommates }: { chore: Chore, roommates: Roommate[] }
 		setLoading(false);
 	};
 
+	const handleChallenge = async () => {
+		if (!user) return;
+		setLoading(true);
+		try {
+			await challengeChore(chore.id, user.uid);
+			toast({ title: 'Dispute filed!', description: 'Housemates must now vote to resolve.', status: 'info' });
+		} catch (e: any) {
+			toast({ title: 'Error', description: e.message, status: 'error' });
+		}
+		setLoading(false);
+	};
+
+	const handleVote = async (vote: 'approve' | 'reject') => {
+		if (!user) return;
+		setLoading(true);
+		try {
+			await voteOnChallenge(chore.id, user.uid, vote);
+			toast({ title: 'Vote submitted', status: 'success' });
+		} catch (e: any) {
+			toast({ title: 'Error', description: e.message, status: 'error' });
+		}
+		setLoading(false);
+	};
+
 	const creator = isBounty ? roommates.find(r => r.id === chore.creatorId) : null;
+	const claimer = roommates.find(r => r.id === chore.assigneeId);
+	const challenger = roommates.find(r => r.id === chore.challengedBy);
+
+	const votes = chore.challengeVotes || {};
+	const approveVotes = Object.values(votes).filter(v => v === 'approve').length;
+	const rejectVotes = Object.values(votes).filter(v => v === 'reject').length;
+	const myVote = user ? votes[user.uid] : null;
+
+	const isCompletedByUser = chore.completedBy === user?.uid;
+	const isChallenger = chore.challengedBy === user?.uid;
+	const canVote = chore.status === 'challenged' && user && !isCompletedByUser && !isChallenger;
 
 	return (
 		<Box position='relative'>
@@ -127,19 +185,34 @@ const ChoreCard = ({ chore, roommates }: { chore: Chore, roommates: Roommate[] }
 						<Text fontFamily='Hellix' fontWeight='700' color='textPrimary' fontSize='lg' lineHeight='1.2'>
 							{chore.name}
 						</Text>
+						{chore.status === 'claimed' && claimer && (
+							<HStack mt={1} spacing={1}>
+								<Avatar size='xxs' name={claimer.displayName} src={claimer.photoURL} />
+								<Text fontSize='xs' color='textSecondary' fontWeight='600'>
+									Claimed by {claimer.displayName?.split(' ')[0]}
+								</Text>
+							</HStack>
+						)}
 					</Box>
 					<Badge 
-						colorScheme={chore.status === 'completed' ? 'gray' : chore.status === 'pending_review' ? 'orange' : chore.status === 'claimed' ? 'yellow' : 'green'} 
-						borderRadius='6px' px={2} py={1} fontSize='10px'
+						variant='subtle'
+						colorScheme={chore.status === 'completed' ? 'gray' : chore.status === 'pending_review' ? 'orange' : chore.status === 'challenged' ? 'red' : chore.status === 'claimed' ? 'yellow' : 'green'} 
+						borderRadius='8px' px={3} py={1} fontSize='10px' fontWeight='900' letterSpacing='wider'
 					>
-						{chore.status === 'pending_review' ? 'PENDING REVIEW' : chore.status.toUpperCase()}
+						{chore.status === 'pending_review' ? 'VERIFYING' : chore.status === 'challenged' ? 'CHALLENGED' : chore.status.toUpperCase()}
 					</Badge>
 				</Flex>
 
-				<Flex gap={4} mb={4} flexWrap='wrap'>
-					<HStack spacing={1}>
-						<Icon as={IoCheckmarkCircle} color={chore.status === 'completed' ? 'textSecondary' : 'textPrimary'} />
-						<Text fontFamily='JetBrains Mono' fontWeight='700' fontSize='sm' color={chore.status === 'completed' ? 'textSecondary' : 'textPrimary'}>
+				<Flex align='center' gap={3} mb={4}>
+					{chore.priority && (
+						<HStack spacing={1} bg={chore.priority === 'high' ? 'rgba(255,59,48,0.12)' : chore.priority === 'medium' ? 'rgba(10,132,255,0.12)' : 'rgba(142,142,147,0.12)'} px={2} py={0.5} borderRadius='full' border='1px solid' borderColor={chore.priority === 'high' ? 'red.400' : chore.priority === 'medium' ? 'blue.400' : 'gray.400'}>
+							<Box w='6px' h='6px' borderRadius='full' bg={chore.priority === 'high' ? 'red.400' : chore.priority === 'medium' ? 'blue.400' : 'gray.400'} />
+							<Text fontSize='9px' fontWeight='900' color={chore.priority === 'high' ? 'red.500' : chore.priority === 'medium' ? 'blue.500' : 'gray.500'} textTransform='uppercase'>{chore.priority}</Text>
+						</HStack>
+					)}
+					<HStack spacing={1} color={chore.reward >= 200 ? 'primaryAction' : 'textPrimary'}>
+						<Icon as={IoFlashOutline} />
+						<Text fontFamily='JetBrains Mono' fontWeight='900' fontSize='sm'>
 							{chore.reward} BT
 						</Text>
 					</HStack>
@@ -165,7 +238,7 @@ const ChoreCard = ({ chore, roommates }: { chore: Chore, roommates: Roommate[] }
 					</Box>
 				)}
 
-				<HStack spacing={2}>
+				<HStack spacing={2} w='100%'>
 					{chore.status === 'open' && (
 						<Button flex={1} size='sm' variant='surface' color='textPrimary' border='1px solid' borderColor='border' onClick={handleClaim}>
 							Claim Task
@@ -179,12 +252,67 @@ const ChoreCard = ({ chore, roommates }: { chore: Chore, roommates: Roommate[] }
 					)}
 
 					{/* Outsource Button if it's assigned to me and hasn't been completed yet */}
-					{!isBounty && isMine && chore.status !== 'completed' && !outsourceExpanded && (
+					{!isBounty && isMine && chore.status !== 'completed' && chore.status !== 'pending_review' && chore.status !== 'challenged' && !outsourceExpanded && (
 						<Button size='sm' bg='yellow.500' color='black' _hover={{ bg: 'yellow.400' }} border='1px solid' borderColor='yellow.400' onClick={() => setOutsourceExpanded(true)}>
 							Outsource
 						</Button>
 					)}
 				</HStack>
+
+				{/* Challenge Action UI */}
+				{chore.status === 'pending_review' && (
+					<VStack w='100%' mt={3} p={3} bg='blackAlpha.200' borderRadius='12px' align='stretch' spacing={2}>
+						<HStack justify='space-between'>
+							<HStack spacing={1}>
+								<Icon as={IoTimeOutline} color='orange.400' />
+								<Text fontSize='xs' fontWeight='700' color='orange.400'>{timeRemaining}</Text>
+							</HStack>
+							<Text fontSize='9px' fontWeight='bold' color='textSecondary'>PENDING AUTO-APPROVAL</Text>
+						</HStack>
+						{!isCompletedByUser && (
+							<Button size='xs' colorScheme='red' variant='solid' leftIcon={<span>⚔️</span>} onClick={handleChallenge} isLoading={loading}>
+								Challenge Task
+							</Button>
+						)}
+					</VStack>
+				)}
+
+				{/* Voting UI for Challenged Chores */}
+				{chore.status === 'challenged' && (
+					<VStack w='100%' mt={3} p={4} bg='red.500' bgOpacity={0.08} border='1px solid' borderColor='red.500' borderRadius='16px' align='stretch' spacing={3}>
+						<HStack spacing={2}>
+							<Icon as={IoShieldHalf} color='red.500' />
+							<Text fontSize='sm' fontWeight='900' color='textPrimary'>DISPUTE ACTIVE</Text>
+						</HStack>
+						<Text fontSize='xs' color='textSecondary'>
+							{challenger ? `${challenger.displayName?.split(' ')[0]} challenged this completion claim.` : 'This task completion was challenged.'}
+						</Text>
+						<HStack justify='space-between' bg='blackAlpha.300' p={2} borderRadius='8px'>
+							<Text fontSize='xs' fontWeight='bold'>VOTE TALLY:</Text>
+							<Text fontSize='xs' fontWeight='bold' color='green.500'>{approveVotes} Approve</Text>
+							<Text fontSize='xs' fontWeight='bold' color='red.500'>{rejectVotes} Reject</Text>
+						</HStack>
+
+						{canVote && (
+							<VStack spacing={2} align='stretch' pt={2}>
+								<Text fontSize='xs' fontWeight='bold' color='textSecondary'>CAST YOUR VOTE:</Text>
+								<HStack spacing={2}>
+									<Button flex={1} size='sm' colorScheme='green' onClick={() => handleVote('approve')} isLoading={loading} isDisabled={myVote === 'approve'}>
+										Approve {myVote === 'approve' && '✓'}
+									</Button>
+									<Button flex={1} size='sm' colorScheme='red' onClick={() => handleVote('reject')} isLoading={loading} isDisabled={myVote === 'reject'}>
+										Reject {myVote === 'reject' && '✓'}
+									</Button>
+								</HStack>
+							</VStack>
+						)}
+						{myVote && !canVote && (
+							<Badge alignSelf='center' colorScheme={myVote === 'approve' ? 'green' : 'red'} variant='outline'>
+								You voted: {myVote.toUpperCase()}
+							</Badge>
+						)}
+					</VStack>
+				)}
 
 				<AnimatePresence>
 					{outsourceExpanded && (
@@ -221,7 +349,7 @@ const ChoreCard = ({ chore, roommates }: { chore: Chore, roommates: Roommate[] }
 								
 								{!photoBase64 ? (
 									<Button w='100%' variant='surface' leftIcon={<IoCameraOutline />} onClick={() => fileInputRef.current?.click()} h='50px'>
-										Attach Photo Proof (Optional)
+										📸 Add Photo (Optional)
 									</Button>
 								) : (
 									<Box position='relative' w='100%' borderRadius='8px' overflow='hidden'>

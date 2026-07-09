@@ -7,5 +7,9 @@ window.onerror = (msg, url, lineNo, columnNo, error) => {
 	return false;
 };
 
+window.addEventListener('unhandledrejection', (event) => {
+	console.error('UNHANDLED PROMISE REJECTION:', event.reason);
+});
+
 const root = createRoot(document.getElementById('root')!);
 root.render(<App />);

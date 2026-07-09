@@ -2,12 +2,17 @@ import { extendTheme, type ThemeConfig } from '@chakra-ui/react';
 import '@/config/fonts.css';
 
 const config: ThemeConfig = {
-	initialColorMode: 'light',
+	initialColorMode: 'system',
 	useSystemColorMode: true, 
 };
 
 const theme = extendTheme({
 	config,
+	fonts: {
+		body: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
+		heading: "'Inter Tight', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
+		mono: "'JetBrains Mono', monospace",
+	},
 	semanticTokens: {
 		colors: {
 			bg: {
@@ -62,14 +67,17 @@ const theme = extendTheme({
 				bg: 'bg',
 				color: 'textPrimary',
 				transition: 'background 0.2s ease, color 0.2s ease',
-				paddingTop: 'env(safe-area-inset-top, 0px)',
-				paddingBottom: 'env(safe-area-inset-bottom, 0px)',
 				overscrollBehavior: 'none',
 				overflowX: 'hidden',
 			},
 		},
 	},
 	components: {
+		Toast: {
+			defaultProps: {
+				position: 'top',
+			},
+		},
 		Button: {
 			baseStyle: {
 				borderRadius: '12px',

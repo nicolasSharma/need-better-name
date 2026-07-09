@@ -1,61 +1,70 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { Box, Flex, Text, keyframes } from '@chakra-ui/react';
-import { useUser } from '@/hooks/useUser';
-import { useTransactions } from '@/hooks/useTransactions';
+import { useNavigate } from 'react-router-dom';
+import { useUser, useTransactions, useRoommates } from '@/context/AppDataProvider';
 import AnimatedNumber from '@/components/AnimatedNumber';
 import { isSystemAdmin } from '@/lib/admin';
-import { collection, getDocs } from 'firebase/firestore';
-import { db } from '@/config/firebase';
+import { triggerCoinDrop } from '@/components/CoinDrop';
 
 const marquee = keyframes`
   0% { transform: translateX(100vw); }
   100% { transform: translateX(-100%); }
 `;
 
+const balancePulse = keyframes`
+  0% { box-shadow: 0 0 0 0 rgba(10, 132, 255, 0.4); }
+  70% { box-shadow: 0 0 0 8px rgba(10, 132, 255, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(10, 132, 255, 0); }
+`;
+
 const TopNav = () => {
 	const { profile } = useUser();
-	const { transactions } = useTransactions(true);
-	const [roommates, setRoommates] = useState<Record<string, string>>({});
+	const { transactions } = useTransactions();
+	const { roommates: roommateList } = useRoommates();
+	const navigate = useNavigate();
+	const [balanceChanged, setBalanceChanged] = useState(false);
+	const prevBalance = useRef<number | null>(null);
 
+	// Detect balance changes and pulse
 	useEffect(() => {
-		const fetchUsers = async () => {
-			try {
-				const snap = await getDocs(collection(db, 'users'));
-				const map: Record<string, string> = {};
-				snap.docs.forEach(d => { 
-					const data = d.data();
-					if (data.displayName && !isSystemAdmin(data.displayName)) {
-						map[d.id] = data.displayName.split(' ')[0]; 
-					} else if (!data.displayName) {
-						map[d.id] = 'User';
-					}
-				});
-				map['house'] = 'HOUSE';
-				setRoommates(map);
-			} catch (e) {
-				console.error("TopNav fetch error", e);
+		if (profile?.balance !== undefined && prevBalance.current !== null && prevBalance.current !== profile.balance) {
+			setBalanceChanged(true);
+			
+			// If balance increased, drop coins!
+			if (profile.balance > prevBalance.current) {
+				const diff = profile.balance - prevBalance.current;
+				triggerCoinDrop(diff);
 			}
-		};
-		fetchUsers();
-	}, []);
+
+			const timer = setTimeout(() => setBalanceChanged(false), 1000);
+			return () => clearTimeout(timer);
+		}
+		if (profile?.balance !== undefined) prevBalance.current = profile.balance;
+	}, [profile?.balance]);
+
+	const roommates = useMemo(() => {
+		const map: Record<string, string> = { house: 'HOUSE' };
+		roommateList.forEach(r => { map[r.id] = r.displayName?.split(' ')[0] || 'User'; });
+		return map;
+	}, [roommateList]);
 
 	const marqueeText = (transactions || []).length > 0 
 		? (transactions || []).slice(0, 15).map(tx => {
 			if (!tx) return '';
 			const name = roommates[tx.userId] || 'UNKNOWN';
 			const amt = Math.abs(tx.amount || 0);
-			if (tx.description) return `[ACT] ${name}: ${tx.description}`;
+			if (tx.description) return `${name}: ${tx.description}`;
 
 			switch(tx.type) {
-				case 'bet_placed': return `[TRADE] ${name} acquired contract shares (${amt} BT)`;
-				case 'bet_payout': return `[PAYOUT] ${name} yielded +${amt} BT from contract`;
-				case 'chore_reward': return `[MINED] ${name} secured +${amt} BT from task verification`;
-				case 'bounty_reward': return `[BOUNTY] ${name} claimed +${amt} BT`;
-				case 'splitwise_settle': return `[SETTLEMENT] Physical USD debt cleared by ${name}`;
-				case 'tax': return `[TAX] Network collected +${amt} BT`;
-				case 'house_seed': return `[LIQUIDITY] Network injected ${amt} BT into new market`;
-				case 'perk_purchase': return `[BURN] ${name} destroyed ${amt} BT for a perk`;
-				default: return `[TX] ${name} transferred ${amt} BT`;
+				case 'bet_placed': return `${name} acquired contract shares (${amt} BT)`;
+				case 'bet_payout': return `${name} yielded +${amt} BT from contract`;
+				case 'chore_reward': return `${name} secured +${amt} BT from task verification`;
+				case 'bounty_reward': return `${name} claimed +${amt} BT`;
+				case 'splitwise_settle': return `Physical USD debt cleared by ${name}`;
+				case 'tax': return `Network collected +${amt} BT`;
+				case 'house_seed': return `Network injected ${amt} BT into new market`;
+				case 'perk_purchase': return `${name} destroyed ${amt} BT for a perk`;
+				default: return `${name} transferred ${amt} BT`;
 			}
 		}).filter(Boolean).join('  ✦  ')
 		: 'MARKET OPEN... AWAITING NETWORK ACTIVITY...';
@@ -91,6 +100,11 @@ const TopNav = () => {
 					borderColor='border'
 					align='center'
 					boxShadow='sm'
+					cursor='pointer'
+					onClick={() => navigate('/profile')}
+					_active={{ transform: 'scale(0.95)' }}
+					transition='all 0.15s'
+					animation={balanceChanged ? `${balancePulse} 1s ease-out` : 'none'}
 				>
 					<Text fontSize='9px' color='primaryAction' fontWeight='900' mr={1.5} letterSpacing='tighter'>BT</Text>
 					<Text fontSize='xs' fontWeight='900' color='textPrimary' fontFamily='JetBrains Mono'>
@@ -102,7 +116,7 @@ const TopNav = () => {
 			<Box overflow='hidden' whiteSpace='nowrap' flex={1} position='relative' display='flex' alignItems='center' borderLeft='1px solid' borderColor='border'>
 				<Box 
 					as='div' 
-					animation={`${marquee} 35s linear infinite`}
+					animation={`${marquee} 60s linear infinite`}
 					display='inline-block'
 					pl='100%'
 				>

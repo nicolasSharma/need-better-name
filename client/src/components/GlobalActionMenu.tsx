@@ -6,15 +6,15 @@ import {
 	useToast, Wrap, WrapItem
 } from '@chakra-ui/react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { IoAdd, IoWalletOutline, IoStatsChartOutline, IoCheckmarkCircleOutline, IoClose, IoTrashOutline, IoRepeatOutline } from 'react-icons/io5';
-import { collection, query, getDocs, orderBy, limit } from 'firebase/firestore';
-import { db } from '@/config/firebase';
-import { useAuth } from '@/hooks/useAuth';
-import { useUser } from '@/hooks/useUser';
-import { filterHouseMembers, isSystemAdmin } from '@/lib/admin';
-import { createExpense, createMarket, createChore } from '@/lib/firestore';
+import { IoAdd, IoWalletOutline, IoStatsChartOutline, IoCheckmarkCircleOutline, IoClose, IoTrashOutline, IoRepeatOutline, IoWineOutline } from 'react-icons/io5';
+import { useAuth } from '@/context/AuthProvider';
+import { useUser, useRoommates } from '@/context/AppDataProvider';
+import { isSystemAdmin } from '@/lib/admin';
+import { createExpense, createMarket, createChore } from '@/lib/services';
 import { triggerHaptic } from '@/lib/haptics';
 import { playChime } from '@/lib/audio';
+import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { db } from '@/config/firebase';
 
 const MotionBox = motion(Box);
 
@@ -26,15 +26,7 @@ export const GlobalActionMenu = () => {
 	const toast = useToast();
 	const location = useLocation();
 
-	const [roommates, setRoommates] = useState<any[]>([]);
-
-	useEffect(() => {
-		const fetchUsers = async () => {
-			const snap = await getDocs(query(collection(db, 'users'), orderBy('displayName')));
-			setRoommates(filterHouseMembers(snap.docs.map(d => ({ id: d.id, ...d.data() } as any))));
-		};
-		fetchUsers();
-	}, []);
+	const { roommates } = useRoommates();
 
 	const handleOpen = () => {
 		triggerHaptic();
@@ -61,7 +53,7 @@ export const GlobalActionMenu = () => {
 			{/* Floating Action Button */}
 			<Button
 				position='fixed'
-				bottom={{ base: '90px', md: '100px' }}
+				bottom='calc(env(safe-area-inset-bottom, 0px) + 80px)'
 				right='20px'
 				w='64px'
 				h='64px'
@@ -115,9 +107,9 @@ export const GlobalActionMenu = () => {
 								</Flex>
 							</DrawerHeader>
 
-							<DrawerBody py={6} pb={8} overflowY='auto' sx={{ '&::-webkit-scrollbar': { display: 'none' } }}>
+							<DrawerBody py={6} pb='calc(env(safe-area-inset-bottom, 8px) + 16px)' overflowY='auto' sx={{ '&::-webkit-scrollbar': { display: 'none' } }}>
 								<AnimatePresence mode='wait'>
-									{activeForm === 'menu' && <MenuSelection key='menu' onSelect={selectForm} />}
+									{activeForm === 'menu' && <MenuSelection key='menu' onSelect={selectForm} user={user} onClose={onClose} />}
 									{activeForm === 'expense' && <ExpenseForm key='expense' roommates={roommates} onClose={onClose} user={user} toast={toast} />}
 									{activeForm === 'market' && <MarketForm key='market' roommates={roommates} onClose={onClose} user={user} toast={toast} />}
 									{activeForm === 'task' && <TaskForm key='task' roommates={roommates} onClose={onClose} user={user} toast={toast} />}
@@ -132,12 +124,31 @@ export const GlobalActionMenu = () => {
 };
 
 // --- MENU SELECTION ---
-const MenuSelection = ({ onSelect }: { onSelect: (f: any) => void }) => {
+const MenuSelection = ({ onSelect, user, onClose }: { onSelect: (f: any) => void, user: any, onClose: () => void }) => {
 	const actions = [
 		{ id: 'expense', title: 'Log USD Expense', desc: 'Add a real-world purchase to the ledger', icon: IoWalletOutline, color: 'yesAction' },
 		{ id: 'market', title: 'Float Contract', desc: 'Create a new predictive market', icon: IoStatsChartOutline, color: 'purple.400' },
-		{ id: 'task', title: 'Dispatch Work', desc: 'Assign chores or post bounties', icon: IoCheckmarkCircleOutline, color: 'orange.400' }
+		{ id: 'task', title: 'Dispatch Work', desc: 'Assign chores or post bounties', icon: IoCheckmarkCircleOutline, color: 'orange.400' },
+		{ id: 'toast', title: 'Call a Toast 🍻', desc: 'Alert everyone that it is time to drink', icon: IoWineOutline, color: 'yellow.400' }
 	];
+
+	const handleSelect = async (id: string) => {
+		triggerHaptic();
+		if (id === 'toast') {
+			if (!user) return;
+			try {
+				await updateDoc(doc(db, 'house', 'main'), {
+					lastToast: {
+						triggeredBy: user.uid,
+						timestamp: serverTimestamp()
+					}
+				});
+				onClose();
+			} catch (e) { console.error(e); }
+		} else {
+			onSelect(id);
+		}
+	};
 
 	return (
 		<VStack spacing={4} align='stretch'>
@@ -152,7 +163,7 @@ const MenuSelection = ({ onSelect }: { onSelect: (f: any) => void }) => {
 					border='1px solid'
 					borderColor='border'
 					cursor='pointer'
-					onClick={() => onSelect(act.id)}
+					onClick={() => handleSelect(act.id)}
 				>
 					<HStack spacing={4}>
 						<Flex w='50px' h='50px' borderRadius='12px' bg={`${act.color}20`} color={act.color} align='center' justify='center'>
@@ -309,6 +320,7 @@ const MarketForm = ({ roommates, onClose, user, toast }: any) => {
 	const [options, setOptions] = useState<string[]>(['YES', 'NO']);
 	const [selectedOption, setSelectedOption] = useState('YES');
 	const [taggedUser, setTaggedUser] = useState<string>(''); 
+	const [expiresAt, setExpiresAt] = useState<string>('');
 	const [submitting, setSubmitting] = useState(false);
 
 	const handleOptionChange = (i: number, v: string) => { const n = [...options]; n[i] = v; setOptions(n); };
@@ -321,7 +333,7 @@ const MarketForm = ({ roommates, onClose, user, toast }: any) => {
 		if (clean.length < 2) return toast({ title: 'Min 2 options required', status: 'error' });
 		setSubmitting(true);
 		try {
-			await createMarket(question, user.uid, parseInt(betAmount)||100, selectedOption, clean, taggedUser || null);
+			await createMarket(question, user.uid, parseInt(betAmount)||100, selectedOption, clean, taggedUser || null, expiresAt ? new Date(expiresAt) : null);
 			triggerHaptic(); toast({ title: 'Contract Floated', status: 'success' }); onClose();
 		} catch (e: any) { toast({ title: 'Execution Error', description: e.message, status: 'error' }); }
 		setSubmitting(false);
@@ -371,6 +383,12 @@ const MarketForm = ({ roommates, onClose, user, toast }: any) => {
 					</Select>
 				</Box>
 			</HStack>
+
+			<Box>
+				<Text fontSize='11px' color='textSecondary' mb={1} fontWeight='800' textTransform='uppercase'>Expiry (Optional)</Text>
+				<Input type='datetime-local' value={expiresAt} onChange={e => setExpiresAt(e.target.value)} bg='surfaceDeep' borderRadius='12px' color='textPrimary' />
+				<Text fontSize='10px' color='textSecondary' mt={1}>Leave blank for no expiry. Expired markets block new bets.</Text>
+			</Box>
 
 			<Button w='100%' h='60px' bg='primaryAction' color='white' isLoading={submitting} onClick={submit} isDisabled={!question}>
 				Launch Contract (-{betAmount || 0} BT)

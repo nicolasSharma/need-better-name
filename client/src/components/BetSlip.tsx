@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { Box, Button, Input, Flex, Text, useToast, Select, Badge } from '@chakra-ui/react';
-import { placeBet } from '@/lib/firestore';
+import { placeBet } from '@/lib/services';
 import { calcPayouts } from '@/lib/engine';
-import { useAuth } from '@/hooks/useAuth';
-import { useUser } from '@/hooks/useUser';
-import type { Market } from '@/hooks/useMarkets';
+import { useAuth } from '@/context/AuthProvider';
+import { useUser } from '@/context/AppDataProvider';
+import type { Market } from '@/types';
 
 interface Props {
 	market: Market;

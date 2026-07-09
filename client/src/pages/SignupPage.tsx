@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Box, Center, Heading, Text, Input, Button, VStack, useToast, Flex } from '@chakra-ui/react';
 import { useNavigate } from 'react-router-dom';
-import { signUp } from '@/lib/firestore';
+import { signUp } from '@/lib/services';
 
 const SignupPage = () => {
 	const [name, setName] = useState('');

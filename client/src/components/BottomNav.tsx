@@ -1,8 +1,9 @@
 import { Box, Flex, Icon, Text } from '@chakra-ui/react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { IoHome, IoList, IoDice, IoGift, IoSettings, IoWallet, IoTrophyOutline } from 'react-icons/io5';
-import { useUser } from '@/hooks/useUser';
+import { useUser } from '@/context/AppDataProvider';
 import { isSystemAdmin } from '@/lib/admin';
+import { triggerHaptic } from '@/lib/haptics';
 
 const navItems = [
 	{ label: 'Home', icon: IoHome, path: '/' },
@@ -11,6 +12,7 @@ const navItems = [
 	{ label: 'Casino', icon: IoDice, path: '/casino' },
 	{ label: 'Chores', icon: IoGift, path: '/chores' },
 ];
+
 
 const BottomNav = () => {
 	const navigate = useNavigate();
@@ -35,8 +37,8 @@ const BottomNav = () => {
 			borderTop='1px solid'
 			borderColor='border'
 			px={2}
-			py={2}
-			pb={{ base: 6, md: 2 }} // safe area for iOS
+			pt={2}
+			pb='calc(env(safe-area-inset-bottom, 8px) + 4px)'
 			zIndex={999}
 		>
 			<Flex justify='space-around' align='center' maxW='500px' mx='auto'>
@@ -45,7 +47,7 @@ const BottomNav = () => {
 					return (
 						<Flex
 							key={item.path}
-							onClick={() => navigate(item.path)}
+							onClick={() => { triggerHaptic(); navigate(item.path); }}
 							direction='column'
 							align='center'
 							justify='center'
@@ -55,10 +57,11 @@ const BottomNav = () => {
 							transition='color 0.2s'
 							_active={{ transform: 'scale(0.9)' }}
 						>
-							<Icon as={item.icon} boxSize={6} mb={1} />
+							<Icon as={item.icon} boxSize={6} mb={0.5} transition='transform 0.15s' transform={active ? 'scale(1.1)' : 'scale(1)'} />
 							<Text fontSize='10px' fontWeight='600'>
 								{item.label}
 							</Text>
+							<Box w='4px' h='4px' borderRadius='full' bg={active ? 'primaryAction' : 'transparent'} mt={0.5} transition='background 0.2s' />
 						</Flex>
 					);
 				})}

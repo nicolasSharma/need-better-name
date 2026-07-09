@@ -1,23 +1,43 @@
 import { useState, useEffect } from 'react';
-import { Box, Flex, Text, Badge, Drawer, DrawerBody, DrawerHeader, DrawerOverlay, DrawerContent, useDisclosure, useToast, Input, VStack, HStack, Icon } from '@chakra-ui/react';
+import { Box, Flex, Text, Badge, Drawer, DrawerBody, DrawerHeader, DrawerOverlay, DrawerContent, useDisclosure, useToast, Input, VStack, HStack, Icon, Button } from '@chakra-ui/react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Market } from '@/hooks/useMarkets';
+import type { Market } from '@/types';
 import { calcPayouts } from '@/lib/engine';
 import { triggerHaptic, triggerAudioPop } from '@/lib/haptics';
 import { playThump } from '@/lib/audio';
 import SwipeToConfirm from '@/components/SwipeToConfirm';
-import { placeBet } from '@/lib/firestore';
-import { useAuth } from '@/hooks/useAuth';
-import { useUser } from '@/hooks/useUser';
+import { placeBet } from '@/lib/services';
+import { useAuth } from '@/context/AuthProvider';
+import { useUser } from '@/context/AppDataProvider';
 import { useNavigate } from 'react-router-dom';
 import { collection, query, where, onSnapshot } from 'firebase/firestore';
 import { db } from '@/config/firebase';
-import { IoStatsChartOutline } from 'react-icons/io5';
+import { IoStatsChartOutline, IoTimeOutline } from 'react-icons/io5';
 
 const statusColors: Record<string, string> = {
 	open: 'green',
 	locked: 'yellow',
 	resolved: 'gray',
+	disputed: 'red',
+};
+
+const useCountdown = (deadline: any) => {
+	const [label, setLabel] = useState('');
+	const [expired, setExpired] = useState(false);
+	useEffect(() => {
+		if (!deadline) { setLabel(''); setExpired(false); return; }
+		const target = typeof deadline.toDate === 'function' ? deadline.toDate().getTime() : new Date(deadline).getTime();
+		const tick = () => {
+			const diff = target - Date.now();
+			if (diff <= 0) { setLabel('Expired'); setExpired(true); return; }
+			const h = Math.floor(diff / 3600000); const m = Math.floor((diff % 3600000) / 60000);
+			setLabel(h > 0 ? `${h}h ${m}m` : `${m}m`);
+		};
+		tick();
+		const interval = setInterval(tick, 60000);
+		return () => clearInterval(interval);
+	}, [deadline]);
+	return { label, expired };
 };
 
 const MarketCard = ({ market }: { market: Market }) => {
@@ -33,6 +53,7 @@ const MarketCard = ({ market }: { market: Market }) => {
 	const toast = useToast();
 
 	const [myHoldings, setMyHoldings] = useState<Record<string, number>>({});
+	const { label: expiryLabel, expired: isExpired } = useCountdown(market.expiresAt);
 
 	useEffect(() => {
 		if (!user) return;
@@ -50,6 +71,10 @@ const MarketCard = ({ market }: { market: Market }) => {
 	}, [user, market.id]);
 
 	const handleOpenDrawer = (optionId: string) => {
+		if (isExpired && market.status === 'open') {
+			toast({ title: 'Market expired — betting closed', status: 'warning' });
+			return;
+		}
 		triggerHaptic();
 		setSelectedOption(optionId);
 		onOpen();
@@ -100,9 +125,16 @@ const MarketCard = ({ market }: { market: Market }) => {
 						<Text fontSize='10px' color='textSecondary' letterSpacing='widest' fontWeight='700'>
 							MARKET CONTRACT
 						</Text>
-						<Badge colorScheme={statusColors[market.status]} borderRadius='full' px={2} paddingY={0.5} fontSize='9px' variant='subtle'>
-							{market.status.toUpperCase()}
-						</Badge>
+						<HStack spacing={2}>
+							{market.expiresAt && market.status === 'open' && (
+								<Badge colorScheme={isExpired ? 'red' : 'yellow'} borderRadius='full' px={2} py={0.5} fontSize='9px' variant='subtle'>
+									<HStack spacing={1}><Icon as={IoTimeOutline} boxSize={2.5} /><Text>{isExpired ? 'EXPIRED' : expiryLabel}</Text></HStack>
+								</Badge>
+							)}
+							<Badge colorScheme={statusColors[market.status] || 'gray'} borderRadius='full' px={2} paddingY={0.5} fontSize='9px' variant='subtle'>
+								{market.status.toUpperCase()}
+							</Badge>
+						</HStack>
 					</Flex>
 
 					<Flex justify='space-between' align='flex-start' mb={5}>
@@ -213,6 +245,9 @@ const MarketCard = ({ market }: { market: Market }) => {
 								BAL: {profile?.balance}
 							</Text>
 						</Flex>
+						{myHoldings[selectedOption] > 0 && (
+							<Text fontSize='xs' color='primaryAction' fontWeight='700' mt={1}>You hold {myHoldings[selectedOption]} BT on {selectedOption.toUpperCase()}</Text>
+						)}
 					</DrawerHeader>
 					<DrawerBody py={6} pb={12}>
 						<Input
@@ -230,9 +265,38 @@ const MarketCard = ({ market }: { market: Market }) => {
 							h='70px'
 							_focus={{ borderColor: 'primaryAction', boxShadow: 'none' }}
 						/>
+
+						<HStack spacing={2} mb={6}>
+							{[25, 50, 100].map(preset => (
+								<Button
+									key={preset}
+									flex={1}
+									size='sm'
+									variant='surface'
+									fontFamily='JetBrains Mono'
+									fontWeight='800'
+									onClick={() => { triggerHaptic(); setBetAmount(preset.toString()); }}
+									bg={betAmount === preset.toString() ? 'primaryAction' : 'surface'}
+									color={betAmount === preset.toString() ? 'white' : 'textPrimary'}
+								>
+									{preset}
+								</Button>
+							))}
+							<Button
+								flex={1}
+								size='sm'
+								variant='surface'
+								fontWeight='800'
+								onClick={() => { triggerHaptic(); setBetAmount((profile?.balance || 0).toString()); }}
+								bg={betAmount === (profile?.balance || 0).toString() ? 'primaryAction' : 'surface'}
+								color={betAmount === (profile?.balance || 0).toString() ? 'white' : 'textPrimary'}
+							>
+								ALL
+							</Button>
+						</HStack>
 						
 						<Flex justify='space-between' mb={8}>
-							<Text color='textSecondary' fontWeight='700'>MODAL POTENTIAL RETURN</Text>
+							<Text color='textSecondary' fontWeight='700'>POTENTIAL RETURN</Text>
 							<Text color='primaryAction' fontFamily='JetBrains Mono' fontWeight='900' fontSize='2xl'>
 								{amt > 0 ? Math.floor(amt * currentPayout) : 0} BT
 							</Text>

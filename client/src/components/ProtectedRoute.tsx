@@ -1,6 +1,6 @@
 import { Navigate } from 'react-router-dom';
 import { Center, Spinner } from '@chakra-ui/react';
-import { useAuth } from '@/hooks/useAuth';
+import { useAuth } from '@/context/AuthProvider';
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
 	const { user, loading } = useAuth();
