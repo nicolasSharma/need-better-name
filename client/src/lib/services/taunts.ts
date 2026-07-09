@@ -4,19 +4,22 @@ import { db } from '@/config/firebase';
 export async function sendTaunt(senderId: string, targetId: string, soundId: string, cost: number = 20) {
 	await runTransaction(db, async (tx) => {
 		const senderRef = doc(db, 'users', senderId);
+		const houseRef = doc(db, 'house', 'main');
+
+		// Perform all reads first
 		const senderSnap = await tx.get(senderRef);
+		const houseSnap = await tx.get(houseRef);
+
 		if (!senderSnap.exists()) throw new Error('Sender not found');
 		
 		const senderData = senderSnap.data();
 		if (senderData.balance < cost) throw new Error('Insufficient balance to send taunt');
 
-		const houseRef = doc(db, 'house', 'main');
-		
+		// Perform all writes after reads
 		// Deduct from sender
 		tx.update(senderRef, { balance: senderData.balance - cost });
 		
 		// Add to house fund
-		const houseSnap = await tx.get(houseRef);
 		if (houseSnap.exists()) {
 			tx.update(houseRef, { fundBalance: houseSnap.data().fundBalance + cost });
 		}
