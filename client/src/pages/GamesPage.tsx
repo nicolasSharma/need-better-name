@@ -1,6 +1,6 @@
 import { useState, lazy, Suspense } from 'react';
 import { Box, Flex, Text, VStack, HStack, Heading, Icon, IconButton } from '@chakra-ui/react';
-import { IoArrowBack, IoHandLeft, IoDice, IoInfinite, IoDiamondOutline, IoRocketOutline, IoChevronForward, IoSpeedometerOutline } from 'react-icons/io5';
+import { IoArrowBack, IoHandLeft, IoDice, IoInfinite, IoDiamondOutline, IoRocketOutline, IoChevronForward, IoSpeedometerOutline, IoDiceOutline, IoSparklesOutline } from 'react-icons/io5';
 import { useNavigate } from 'react-router-dom';
 import { useUser } from '@/context/AppDataProvider';
 import { triggerHaptic } from '@/lib/haptics';
@@ -13,6 +13,8 @@ const HigherLower = lazy(() => import('./games/HigherLower'));
 const Mines = lazy(() => import('./games/Mines'));
 const Crash = lazy(() => import('./games/Crash'));
 const HorseRacing = lazy(() => import('./games/HorseRacing'));
+const Slots = lazy(() => import('./games/Slots'));
+const Craps = lazy(() => import('./games/Craps'));
 
 const GameFallback = () => (
 	<VStack spacing={4} p={8} pt={20}>
@@ -25,7 +27,7 @@ const GameFallback = () => (
 const GamesPage = () => {
 	const navigate = useNavigate();
 	const { profile } = useUser();
-	const [activeGame, setActiveGame] = useState<'none' | 'blackjack' | 'roulette' | 'streak' | 'mines' | 'crash' | 'race'>('none');
+	const [activeGame, setActiveGame] = useState<'none' | 'blackjack' | 'roulette' | 'streak' | 'mines' | 'crash' | 'race' | 'slots' | 'craps'>('none');
 
 	const games = [
 		{ id: 'blackjack', name: 'Blackjack', icon: IoHandLeft, color: 'green.500', desc: 'Beat the dealer to 21' },
@@ -34,6 +36,8 @@ const GamesPage = () => {
 		{ id: 'mines', name: 'Mines', icon: IoDiamondOutline, color: 'orange.400', desc: 'Find gems, avoid mines' },
 		{ id: 'crash', name: 'Crash', icon: IoRocketOutline, color: 'purple.500', desc: 'Cash out before the rocket blows' },
 		{ id: 'race', name: 'Derby Racing', icon: IoSpeedometerOutline, color: 'orange.500', desc: 'Top-down virtual horse racing simulator' },
+		{ id: 'slots', name: 'Slots', icon: IoSparklesOutline, color: 'pink.500', desc: 'Spin the reels for big payouts' },
+		{ id: 'craps', name: 'Craps', icon: IoDiceOutline, color: 'teal.500', desc: 'Roll the dice and hit the Point' },
 	];
 
 	if (activeGame !== 'none') {
@@ -49,6 +53,8 @@ const GamesPage = () => {
 						{activeGame === 'mines' && <Mines onExit={exit} balance={bal} />}
 						{activeGame === 'crash' && <Crash onExit={exit} balance={bal} />}
 						{activeGame === 'race' && <HorseRacing onExit={exit} balance={bal} />}
+						{activeGame === 'slots' && <Slots onExit={exit} balance={bal} />}
+						{activeGame === 'craps' && <Craps onExit={exit} balance={bal} />}
 					</Suspense>
 				</ErrorBoundary>
 			</Box>
@@ -97,14 +103,9 @@ const GamesPage = () => {
 						</HStack>
 					</Box>
 				))}
-			<Box 
-				w='100%' bg='surface' p={6} borderRadius='24px' border='1px dashed' borderColor='border' opacity={0.6} textAlign='center'
-			>
-				<Text color='textSecondary' fontSize='sm' fontWeight='800' letterSpacing='widest'>CRAPS COMING SOON</Text>
-			</Box>
-		</VStack>
-	</Box>
-);
+			</VStack>
+		</Box>
+	);
 };
 
 export default GamesPage;

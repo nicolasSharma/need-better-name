@@ -31,37 +31,37 @@ const WheelSegment = ({ num, index }: { num: number; index: number }) => {
 			style={{ transform: `rotate(${angle}deg)` }}
 			pointerEvents='none'
 		>
-			{/* Segment slice via clip-path */}
+			{/* Wedge slice via simple clip-path */}
 			<Box
 				position='absolute'
-				top='0' left='50%'
-				w='50%' h='50%'
-				transformOrigin='bottom left'
+				top='0' left='calc(50% - 11.5px)'
+				w='23px' h='130px'
+				transformOrigin='bottom center'
 				style={{
-					transform: `rotate(${-90 + SEGMENT_DEG / 2}deg)`,
-					clipPath: `polygon(0% 100%, 100% 100%, ${50 + 50 * Math.tan(((SEGMENT_DEG / 2) * Math.PI) / 180)}% 0%, ${50 - 50 * Math.tan(((SEGMENT_DEG / 2) * Math.PI) / 180)}% 0%)`,
-					background: `linear-gradient(to top, ${color}, ${color}dd)`,
+					clipPath: 'polygon(50% 100%, 0 0, 100% 0)',
+					background: color,
 				}}
 			/>
-			{/* Divider line */}
+			{/* Divider line rotated to the edge of the wedge */}
 			<Box
 				position='absolute'
 				top='0' left='50%'
-				w='1px' h='50%'
+				w='1px' h='130px'
 				bg='whiteAlpha.300'
 				transformOrigin='bottom center'
+				style={{ transform: `rotate(${SEGMENT_DEG / 2}deg)` }}
 			/>
-			{/* Number label */}
+			{/* Number label positioned perfectly inside the wedge */}
 			<Box
 				position='absolute'
-				top='6px'
+				top='10px'
 				left='50%'
 				transform='translateX(-50%)'
 				pointerEvents='none'
 			>
 				<Text
 					color='white'
-					fontSize='9px'
+					fontSize='10px'
 					fontWeight='900'
 					textAlign='center'
 					textShadow='0 1px 3px rgba(0,0,0,0.9)'
@@ -75,7 +75,7 @@ const WheelSegment = ({ num, index }: { num: number; index: number }) => {
 };
 
 /* ── The full roulette wheel ── */
-const RouletteWheel = ({ rotation, spinning }: { rotation: number; spinning: boolean }) => (
+const RouletteWheel = ({ rotation, spinning, resultText }: { rotation: number; spinning: boolean; resultText: string }) => (
 	<Center h='300px' w='300px' position='relative'>
 		{/* Outer ring / bezel */}
 		<Box
@@ -148,6 +148,33 @@ const RouletteWheel = ({ rotation, spinning }: { rotation: number; spinning: boo
 			zIndex={10}
 			filter='drop-shadow(0 2px 6px rgba(0,0,0,0.6))'
 		/>
+
+		{/* Centered Result Overlay */}
+		<AnimatePresence>
+			{resultText && !spinning && (
+				<Box
+					as={motion.div}
+					initial={{ scale: 0, opacity: 0 }}
+					animate={{ scale: 1, opacity: 1 }}
+					exit={{ scale: 0, opacity: 0 }}
+					position='absolute'
+					zIndex={20}
+					textAlign='center'
+					pointerEvents='none'
+				>
+					<Badge
+						colorScheme={resultText.includes('WON') ? 'green' : 'red'}
+						fontSize='3xl'
+						p={6}
+						borderRadius='2xl'
+						boxShadow='dark-lg'
+						border='4px solid white'
+					>
+						{resultText}
+					</Badge>
+				</Box>
+			)}
+		</AnimatePresence>
 	</Center>
 );
 
@@ -212,7 +239,7 @@ const Roulette = ({ onExit, balance }: { onExit: () => void; balance: number }) 
 					<VStack spacing={1}><Heading size='sm' color='textPrimary'>Roulette Table</Heading><LobbyDock players={players} userId={user?.uid} onToggleReady={toggleReady} /></VStack>
 					<Box w='40px' />
 				</Flex>
-				<RouletteWheel rotation={rotation} spinning={spinning} />
+				<RouletteWheel rotation={rotation} spinning={spinning} resultText={resultText} />
 				<Box w='100%' bg='green.800' p={4} borderRadius='12px' border='4px solid' borderColor='#D4AF37' boxShadow='2xl' position='relative'>
 					<HStack spacing={0} h='180px'>
 						<Flex w='40px' h='100%' bg='green.500' border='1px solid white' align='center' justify='center' onClick={() => placeBet('green')} cursor='pointer' position='relative' borderTopLeftRadius='xl' borderBottomLeftRadius='xl' bgGradient={result === 0 ? 'radial(whiteAlpha.400, transparent)' : 'none'} borderColor={result === 0 ? 'yellow.400' : 'whiteAlpha.400'} borderWidth={result === 0 ? '3px' : '1px'}><Text color='white' fontWeight='900' transform='rotate(-90deg)'>0</Text>{bets['green'] && <Box position='absolute' top='50%' left='50%' transform='translate(-50%,-50%)'><Chip amount={getChipForBet(bets['green'])} active={false} onClick={()=>{}} /></Box>}</Flex>
@@ -224,7 +251,6 @@ const Roulette = ({ onExit, balance }: { onExit: () => void; balance: number }) 
 						<Button flex={1} h='50px' bg='red.600' color='white' _hover={{bg:'red.700'}} onClick={() => placeBet('red')} position='relative' borderRadius='xl'>RED (2x){bets['red'] && <Box position='absolute' top='-10px' right='-10px' transform='scale(0.5)'><Chip amount={getChipForBet(bets['red'])} active={false} onClick={()=>{}}/></Box>}</Button>
 						<Button flex={1} h='50px' bg='black' color='white' _hover={{bg:'gray.900'}} onClick={() => placeBet('black')} position='relative' borderRadius='xl' border='1px solid' borderColor='whiteAlpha.300'>BLACK (2x){bets['black'] && <Box position='absolute' top='-10px' right='-10px' transform='scale(0.5)'><Chip amount={getChipForBet(bets['black'])} active={false} onClick={()=>{}}/></Box>}</Button>
 					</HStack>
-					<AnimatePresence>{result !== null && !spinning && (<Box as={motion.div} initial={{ scale: 0, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} position='absolute' top='50%' left='50%' transform='translate(-50%, -50%)' zIndex={10} textAlign='center' pointerEvents='none'><Badge colorScheme={resultText.includes('WON') ? 'green' : 'red'} fontSize='3xl' p={6} borderRadius='2xl' boxShadow='dark-lg' border='4px solid white'>{resultText}</Badge></Box>)}</AnimatePresence>
 				</Box>
 			</VStack>
 			<Box w='100%' pt={10}>

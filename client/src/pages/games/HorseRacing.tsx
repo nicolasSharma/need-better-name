@@ -52,76 +52,68 @@ const HorseRacing = ({ onExit, balance }: { onExit: () => void; balance: number 
 		triggerHaptic();
 		playPlink();
 
-		const initialPos = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0 };
-		setPositions(initialPos);
-		posRef.current = initialPos;
+		// Determine winner at the start
+		const winner = HORSES[Math.floor(Math.random() * HORSES.length)].id;
 
-		// Reset DOM positions directly before starting
-		HORSES.forEach(horse => {
-			const el = document.getElementById(`horse-dot-${horse.id}`);
-			if (el) el.style.left = '0%';
+		// Pre-calculate positions for 4 stages (every 2 seconds)
+		const stage1: Record<number, number> = {};
+		const stage2: Record<number, number> = {};
+		const stage3: Record<number, number> = {};
+		const stage4: Record<number, number> = {};
+
+		HORSES.forEach(h => {
+			stage1[h.id] = 15 + Math.random() * 20; // 15% - 35%
+			stage2[h.id] = 40 + Math.random() * 20; // 40% - 60%
+			stage3[h.id] = 65 + Math.random() * 20; // 65% - 85%
+			stage4[h.id] = h.id === winner ? 100 : 85 + Math.random() * 10; // Winner is 100%, others 85% - 95%
 		});
 
-		let active = true;
-		let frameCount = 0;
-
-		const tick = () => {
-			if (!active) return;
-			
-			const nextPos = { ...posRef.current };
-			let currentWinner: number | null = null;
-
-			HORSES.forEach(horse => {
-				const current = nextPos[horse.id];
-				if (current >= 100) {
-					if (!currentWinner) currentWinner = horse.id;
-					return;
-				}
-				// Base speed + random variance set for ~8 second total race time
-				const isFinalStretch = current > 75;
-				const baseSpeed = 0.08 + Math.random() * 0.12;
-				const burstChance = isFinalStretch && Math.random() < 0.15 ? 0.35 : 0;
-				const step = baseSpeed + Math.random() * 0.08 + burstChance;
-				nextPos[horse.id] = Math.min(100, current + step);
-
-				// Direct DOM update for 60 FPS smooth rendering
-				const el = document.getElementById(`horse-dot-${horse.id}`);
-				if (el) {
-					el.style.left = `${nextPos[horse.id]}%`;
-				}
-			});
-
-			posRef.current = nextPos;
-
-			// Throttle React state updates (e.g. for standings) to every 10 frames to avoid render lag
-			frameCount++;
-			if (frameCount % 10 === 0) {
-				setPositions({ ...nextPos });
-				const sorted = [...HORSES]
-					.sort((a, b) => nextPos[b.id] - nextPos[a.id])
-					.map(h => h.id);
-				setStandings(sorted);
-			}
-
-			// Check winner
-			const finished = HORSES.some(h => nextPos[h.id] >= 100);
-			if (finished) {
-				active = false;
-				setPositions({ ...nextPos });
-				const sorted = [...HORSES]
-					.sort((a, b) => nextPos[b.id] - nextPos[a.id])
-					.map(h => h.id);
-				setStandings(sorted);
-
-				const winner = sorted[0];
-				setWinnerId(winner);
-				resolveRace(winner);
-			} else {
-				animationRef.current = requestAnimationFrame(tick);
-			}
+		const updateStandings = (posMap: Record<number, number>) => {
+			const sorted = [...HORSES]
+				.sort((a, b) => posMap[b.id] - posMap[a.id])
+				.map(h => h.id);
+			setStandings(sorted);
 		};
 
-		animationRef.current = requestAnimationFrame(tick);
+		// Reset to 0% first
+		setPositions({ 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0 });
+		setStandings([1, 2, 3, 4, 5, 6]);
+
+		// Timeout array to clear if component unmounts
+		const timeouts: NodeJS.Timeout[] = [];
+
+		// Stage 1 (0s -> 2s)
+		timeouts.push(setTimeout(() => {
+			setPositions(stage1);
+			updateStandings(stage1);
+		}, 50));
+
+		// Stage 2 (2s -> 4s)
+		timeouts.push(setTimeout(() => {
+			setPositions(stage2);
+			updateStandings(stage2);
+		}, 2000));
+
+		// Stage 3 (4s -> 6s)
+		timeouts.push(setTimeout(() => {
+			setPositions(stage3);
+			updateStandings(stage3);
+		}, 4000));
+
+		// Stage 4 (6s -> 8s)
+		timeouts.push(setTimeout(() => {
+			setPositions(stage4);
+			updateStandings(stage4);
+		}, 6000));
+
+		// Resolve Race (8.2s)
+		timeouts.push(setTimeout(() => {
+			setWinnerId(winner);
+			resolveRace(winner);
+		}, 8200));
+
+		// Save timeouts in a ref to clean up on unmount
+		(window as any)._raceTimeouts = timeouts;
 	};
 
 	const resolveRace = async (winner: number) => {
