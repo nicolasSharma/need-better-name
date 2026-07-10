@@ -56,17 +56,20 @@ const HorseRacing = ({ onExit, balance }: { onExit: () => void; balance: number 
 		setPositions(initialPos);
 		posRef.current = initialPos;
 
+		// Reset DOM positions directly before starting
+		HORSES.forEach(horse => {
+			const el = document.getElementById(`horse-dot-${horse.id}`);
+			if (el) el.style.left = '0%';
+		});
+
 		let active = true;
-		const startTime = Date.now();
+		let frameCount = 0;
 
 		const tick = () => {
 			if (!active) return;
-			const elapsed = Date.now() - startTime;
 			
-			// Simulate step for each horse
 			const nextPos = { ...posRef.current };
 			let currentWinner: number | null = null;
-			let maxProgress = 0;
 
 			HORSES.forEach(horse => {
 				const current = nextPos[horse.id];
@@ -74,27 +77,42 @@ const HorseRacing = ({ onExit, balance }: { onExit: () => void; balance: number 
 					if (!currentWinner) currentWinner = horse.id;
 					return;
 				}
-				// Base speed + random noise + stretch burst chance
+				// Base speed + random variance set for ~8 second total race time
 				const isFinalStretch = current > 75;
-				const baseSpeed = 0.4 + Math.random() * 0.5;
-				const burstChance = isFinalStretch && Math.random() < 0.15 ? 1.5 : 0;
-				const step = baseSpeed + Math.random() * 0.4 + burstChance;
+				const baseSpeed = 0.08 + Math.random() * 0.12;
+				const burstChance = isFinalStretch && Math.random() < 0.15 ? 0.35 : 0;
+				const step = baseSpeed + Math.random() * 0.08 + burstChance;
 				nextPos[horse.id] = Math.min(100, current + step);
+
+				// Direct DOM update for 60 FPS smooth rendering
+				const el = document.getElementById(`horse-dot-${horse.id}`);
+				if (el) {
+					el.style.left = `${nextPos[horse.id]}%`;
+				}
 			});
 
 			posRef.current = nextPos;
-			setPositions(nextPos);
 
-			// Calculate standings
-			const sorted = [...HORSES]
-				.sort((a, b) => nextPos[b.id] - nextPos[a.id])
-				.map(h => h.id);
-			setStandings(sorted);
+			// Throttle React state updates (e.g. for standings) to every 10 frames to avoid render lag
+			frameCount++;
+			if (frameCount % 10 === 0) {
+				setPositions({ ...nextPos });
+				const sorted = [...HORSES]
+					.sort((a, b) => nextPos[b.id] - nextPos[a.id])
+					.map(h => h.id);
+				setStandings(sorted);
+			}
 
 			// Check winner
 			const finished = HORSES.some(h => nextPos[h.id] >= 100);
 			if (finished) {
 				active = false;
+				setPositions({ ...nextPos });
+				const sorted = [...HORSES]
+					.sort((a, b) => nextPos[b.id] - nextPos[a.id])
+					.map(h => h.id);
+				setStandings(sorted);
+
 				const winner = sorted[0];
 				setWinnerId(winner);
 				resolveRace(winner);
@@ -115,7 +133,8 @@ const HorseRacing = ({ onExit, balance }: { onExit: () => void; balance: number 
 		let message = '';
 
 		if (selectedHorseId === winner) {
-			payout = bet * userHorse.odds;
+			// Odds of X:1 means payout is bet * (odds + 1) -> profit of (bet * odds) + original bet
+			payout = bet * (userHorse.odds + 1);
 			message = `WIN! ${userHorse.name} won at ${userHorse.odds}:1. Payout: ${payout} BT!`;
 			playWin();
 			setConfetti(true);
@@ -172,7 +191,7 @@ const HorseRacing = ({ onExit, balance }: { onExit: () => void; balance: number 
 										<Box w='16px' h='16px' borderRadius='full' bg={horse.color} />
 										<Text fontWeight='900' color='textPrimary'>{horse.name}</Text>
 									</HStack>
-									<Badge colorScheme='purple' fontSize='md' px={3} py={1} borderRadius='lg'>{horse.odds}x Payout</Badge>
+									<Badge colorScheme='purple' fontSize='md' px={3} py={1} borderRadius='lg'>{horse.odds}:1 Odds</Badge>
 								</Flex>
 							))}
 						</VStack>
@@ -211,10 +230,10 @@ const HorseRacing = ({ onExit, balance }: { onExit: () => void; balance: number 
 										{/* Finish Line */}
 										<Box position='absolute' right='10%' top={0} bottom={0} w='2px' bg='red.500' zIndex={1} opacity={0.6} />
 										<Box
+											id={`horse-dot-${horse.id}`}
 											position='absolute'
 											left={`${positions[horse.id]}%`}
 											transform='translateX(-50%)'
-											transition='left 0.06s linear'
 											zIndex={2}
 										>
 											<VStack spacing={0}>
