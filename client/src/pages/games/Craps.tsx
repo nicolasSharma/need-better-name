@@ -58,8 +58,13 @@ const Craps = ({ onExit, balance }: { onExit: () => void; balance: number }) => 
 
 	const rollDice = () => {
 		if (rolling || totalBet === 0) return;
-		if (balance < totalBet) {
-			toast({ title: 'Insufficient balance', status: 'error' });
+		
+		const newBetCost = point === null 
+			? totalBet 
+			: Object.keys(bets).reduce((acc, key) => (key !== 'pass' && key !== 'dontpass' ? acc + bets[key] : acc), 0);
+
+		if (balance < newBetCost) {
+			toast({ title: `Insufficient balance. You need ${newBetCost} BT for new bets.`, status: 'error' });
 			return;
 		}
 
@@ -203,16 +208,10 @@ const Craps = ({ onExit, balance }: { onExit: () => void; balance: number }) => 
 		}
 
 		// Deduct bet and process payout in database
-		const rollCost = Object.keys(bets).reduce((acc, key) => {
-			// Only count the cost of bets resolved this roll
-			if (key !== 'pass' && key !== 'dontpass') return acc + bets[key];
-			if (nextPoint === null) return acc + bets[key]; // if resolved
-			return acc; // if locked in Point phase (cost was already paid or is carried)
-		}, 0);
-
-		// If point was set in this roll, the cost of pass/dontpass is paid now
-		const isComeOutSettingPoint = point === null && nextPoint !== null;
-		const totalResolvedOrSetCost = rollCost + (isComeOutSettingPoint ? (bets['pass'] || 0) + (bets['dontpass'] || 0) : 0);
+		// On Come-out roll, we charge all bets. On Point roll, we only charge new proposition bets.
+		const totalResolvedOrSetCost = point === null 
+			? totalBet 
+			: Object.keys(bets).reduce((acc, key) => (key !== 'pass' && key !== 'dontpass' ? acc + bets[key] : acc), 0);
 
 		if (roundPayout > totalResolvedOrSetCost) {
 			payoutStatus = 'win';

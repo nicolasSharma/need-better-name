@@ -37,7 +37,7 @@ const Slots = ({ onExit, balance }: { onExit: () => void; balance: number }) => 
 		}
 		// 2 of a kind
 		else if (r1 === r2 || r2 === r3 || r1 === r3) {
-			multiplier = 2;
+			multiplier = 1.5;
 		}
 
 		return multiplier;
@@ -122,7 +122,7 @@ const Slots = ({ onExit, balance }: { onExit: () => void; balance: number }) => 
 
 			// Resolve
 			const mult = calculateResult(finalReels);
-			const payout = bet * mult;
+			const payout = Math.floor(bet * mult);
 			setPayoutAmount(payout);
 
 			let message = '';
